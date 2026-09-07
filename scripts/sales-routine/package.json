@@ -1,0 +1,17 @@
+{
+  "name": "pilotic-sales-routine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "필로틱 출판 일별 판매량(교보·예스24·알라딘·영풍) 조회 후 구글시트 자동 입력",
+  "main": "index.js",
+  "scripts": {
+    "routine": "node index.js",
+    "login": "node index.js --login",
+    "dry": "node index.js --dry-run",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "googleapis": "^178.0.0",
+    "playwright": "1.56.1"
+  }
+}

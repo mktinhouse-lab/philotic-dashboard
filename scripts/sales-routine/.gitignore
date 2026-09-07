@@ -1,0 +1,6 @@
+node_modules/
+profile/
+debug/
+*.json.key
+service-account*.json
+.env
