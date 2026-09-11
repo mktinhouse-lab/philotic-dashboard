@@ -133,6 +133,28 @@ def collect():
     return out, meta
 
 
+def stamp_try(src, html, s, e, ok, why):
+    """수집을 시도했다는 사실 자체를 순위 블록에 남긴다.
+
+    실패해도 화면에는 이전 순위가 그대로 보인다. 그래서 '왜 안 바뀌었는지'를 적어두지 않으면,
+    열어 본 사람은 순위가 안 움직인 건지 수집이 죽은 건지 구별할 수 없다.
+    기존 값은 하나도 건드리지 않고 lastTry 만 덧붙인다."""
+    try:
+        blk = json.loads(html[s + len(OPEN):e]) or {}
+    except Exception:
+        return                                   # 블록을 못 읽으면 아무것도 하지 않는다
+    kst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
+    blk['lastTry'] = {'at': kst.strftime('%Y-%m-%d %H:%M'), 'ok': bool(ok), 'why': why}
+    doc = html[:s] + OPEN + json.dumps(blk, ensure_ascii=False) + '</script>' + html[e + len('</script>'):]
+    if doc.count(OPEN) != 1 or 'id="payload"' not in doc or 'id="thumbs"' not in doc:
+        return
+    try:
+        open(src, 'w', encoding='utf-8').write(doc)
+        print('     (수집 시도 기록을 남겼습니다 — 화면에 사유가 표시됩니다)')
+    except Exception:
+        pass
+
+
 def main():
     if len(sys.argv) < 2:
         print('SKIP 대상 html 경로가 없습니다'); return 0
@@ -151,6 +173,12 @@ def main():
     except Exception as ex:
         print('SKIP 순위 수집 실패 —', ex)
         print('     (판매·광고 배포는 그대로 진행합니다. 순위는 이전 값이 유지됩니다.)')
+        why = str(ex)
+        if 'Tunnel connection failed' in why or 'CONNECT' in why:
+            why = ('교보 서버로 나가는 길이 실행 환경의 네트워크 정책에 막혀 있습니다 '
+                   '(store.kyobobook.co.kr CONNECT 403). 네트워크가 열린 곳에서 tools/ranks.py 를 돌리거나, '
+                   '환경 네트워크 정책에 교보 호스트를 허용해야 합니다.')
+        stamp_try(src, html, s, e, False, why[:300])
         return 0
 
     kst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
@@ -164,6 +192,7 @@ def main():
                       'deep': bool(s2.get('deep')), 'byCat': bool(s2.get('byCat'))} for s2 in SURFACES],
         'periods': meta,
         'books': out,
+        'lastTry': {'at': collected, 'ok': True, 'why': ''},
     }
 
     # 이전 hist 를 이어받는다 — 못 읽으면 새로 시작하되 그 사실을 찍는다
