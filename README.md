@@ -27,15 +27,30 @@
 
 ## tools/
 
+`ranks.py` 와 `organic.py` 는 아티팩트 안(`ranksPy`·`organicPy` 블록)에 박혀 있는 것과 같은
+스크립트를 꺼내 둔 사본입니다. 셋 다 **아티팩트 HTML 을 제자리에서 고치고**, 고친 파일을
+같은 URL 로 republish 하면 끝입니다.
+
 ```bash
 pip install openpyxl
 
-# 1) 시트를 xlsx 로 내려받는다 (Google Drive MCP: download_file_content,
-#    exportMimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
-# 2) 아티팩트 HTML 을 받아둔다 (Artifact action:"read")
+# 0) 아티팩트 HTML 을 받아둔다 — Artifact action:"read" (dash.html 로 저장됨)
+
+# 판매 — 시트를 xlsx 로 내려받아 병합 (Google Drive MCP: download_file_content,
+#        exportMimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
 python3 tools/merge_sales.py dash.html sales.xlsx 2026-09-11   # 마지막 인자 = 오늘
-# 3) dash.html 을 같은 URL 로 republish
+
+# 교보 순위 — 외부 네트워크 필요 (아래 '알려진 제약' 참고)
+python3 tools/ranks.py dash.html
+
+# 오가닉 — 윈저로 받아둔 ig.json / fb.json 을 병합
+python3 tools/organic.py dash.html ig.json fb.json
+
+# 마지막에 dash.html 을 같은 URL 로 republish
 ```
+
+세 스크립트 모두 **실패해도 파일을 건드리지 않고 SKIP 하고 끝납니다.** 순위가 하루 비는 것보다
+판매·광고 갱신이 통째로 멈추는 쪽이 나쁘기 때문입니다. 그래서 순서에 상관없이 이어 돌려도 됩니다.
 
 `merge_sales.py` 규칙
 
@@ -61,4 +76,18 @@ Claude Code on the web 세션은 외부 HTTPS 가 조직 정책으로 막혀 있
 - 판매 시트 → 아티팩트, 메타 광고, 인스타·페북 = **된다**
 - 교보 순위(`ranksPy`) · 유튜브 · 볼라 = **안 된다** — 이전 값이 그대로 남는다
 
-풀려면 환경(Environments)의 네트워크 정책에 해당 호스트를 열어 주어야 합니다.
+2026-09-11 확인 — `store.kyobobook.co.kr` 재시도 2회 모두 `CONNECT 403`.
+
+푸는 방법은 둘입니다.
+
+1. **환경 네트워크 정책 열기** — claude.ai/code 의 환경(Environments) 설정에서 아래 호스트를 허용.
+   그러면 클라우드 루틴이 매일 알아서 채웁니다.
+   `store.kyobobook.co.kr` · `product.kyobobook.co.kr` · `event.kyobobook.co.kr`
+   (유튜브·볼라까지 원하면 `www.youtube.com` · `vo.la`)
+   문서: https://code.claude.com/docs/en/claude-code-on-the-web
+2. **로컬에서 돌리기** — 이 저장소를 클론한 내 컴퓨터의 Claude Code 세션에서
+   `python3 tools/ranks.py dash.html` 을 돌리고 republish. 로컬은 네트워크 제약이 없습니다.
+
+`tools/ranks.py` 안의 `API_KEY` 는 교보 공개 베스트셀러 화면이 쓰는 게이트웨이 키입니다.
+교보가 키를 갈면 403 이 나므로, 그때는 `store.kyobobook.co.kr/bestseller/online/daily` 의
+네트워크 탭에서 `x-api-gw-key` 를 새로 복사해 넣어야 합니다 — 스크립트가 그 사유를 찍어 줍니다.
