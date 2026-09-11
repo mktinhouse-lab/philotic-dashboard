@@ -43,6 +43,10 @@ python3 tools/merge_sales.py dash.html sales.xlsx 2026-09-11   # 마지막 인�
 # 교보 순위 — 외부 네트워크 필요 (아래 '알려진 제약' 참고)
 python3 tools/ranks.py dash.html
 
+# 교보 순위를 손으로 한 칸만 넣기 (수집기가 못 도는 동안)
+python3 tools/set_rank.py dash.html kaljung totalWeeklyCat 9        # '종합 인문 9위'
+# → 타일에 '수기 입력' 딱지가 붙고, 수집기가 다시 돌면 자동 값으로 덮인다
+
 # 오가닉 — 윈저로 받아둔 ig.json / fb.json 을 병합
 python3 tools/organic.py dash.html ig.json fb.json
 
