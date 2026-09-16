@@ -69,6 +69,35 @@ python3 tools/organic.py dash.html ig.json fb.json
 시트 열 매핑은 `extract_sales.py` 에 있습니다. 무한의부·세네카 탭은 **영풍 열이 없는 구형**이라
 열 번호가 한 칸씩 밀립니다.
 
+## 막힌 원천을 브라우저로 뚫기
+
+클라우드 세션이 교보·유튜브·볼라에 못 나가는 건 정책이라 여기서 풀 수 없다.
+대신 **사람 브라우저**로 받아오면 된다 — 같은 출처라 막힐 것이 없고 로그인 세션도 그대로 쓴다.
+
+### 교보 순위
+
+1. https://store.kyobobook.co.kr/bestseller/online/daily 를 연다
+2. F12 → Console 에 `tools/collect-ranks-console.js` 전체를 붙여넣고 Enter
+3. 화면에 뜨는 상자의 JSON 을 복사 (전체 선택돼 있으니 Ctrl+C)
+4. 그 JSON 을 클로드에게 주면 — `python3 tools/apply_ranks_json.py dash.html ranks.json`
+
+수집기는 `ranks.py` 와 같은 면·같은 순서로 훑고 산출물 모양도 같다. 면 하나가 실패해도
+나머지는 그대로 나온다. 상품 페이지(주간베스트)는 출처가 달라 브라우저가 막을 수 있는데,
+그때는 이전 값이 유지된다.
+
+### 교보 펀딩
+
+펀딩 페이지에서 모금액만 읽어 넣으면 달성률·적립 단계·예상 최종은 화면이 다시 계산한다.
+
+```bash
+python3 tools/set_funding.py dash.html pyoryu 4120000
+```
+
+### 유튜브
+
+윈저에 `youtube` 커넥터가 있다(OAuth). 한 번 연결하면 그 뒤로는 자동이다.
+연결 링크: https://onboard.windsor.ai/connect?connector=youtube&next=/youtube/authorize
+
 ## 알려진 제약 — 클라우드 세션의 네트워크 정책
 
 Claude Code on the web 세션은 외부 HTTPS 가 조직 정책으로 막혀 있어
