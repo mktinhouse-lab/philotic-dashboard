@@ -38,9 +38,11 @@ def main(html_path, xlsx_path, today):
                     prev[1:7] = r[1:7]
                 if not prev[7] and r[7]:
                     prev[7] = r[7]
-        # 아직 안 채운 맨 끝 날짜(값도 메모도 없는 줄)는 붙이지 않는다 — 0부 판매로 읽힌다.
+        # 아직 안 채운 맨 끝 날짜는 붙이지 않는다 — 0부 판매로 읽힌다.
+        # 메모가 있어도 자른다. 시트에는 '교보 전회원 대상 펀딩 PUSH' 처럼 앞으로 할 일을
+        # 미리 적어 둔 줄이 있는데, 그걸 살리면 판매 0 인 날이 하루 생긴다.
         # 중간의 0 은 진짜 0 이므로 끝에서만 잘라낸다.
-        while fresh and all(v == 0 for v in fresh[-1][1:7]) and not fresh[-1][7]:
+        while fresh and all(v == 0 for v in fresh[-1][1:7]):
             fresh.pop()
         added = [r[0] for r in fresh]
         for r in fresh:
