@@ -113,11 +113,28 @@ Claude Code on the web 세션은 외부 HTTPS 가 조직 정책으로 막혀 있
 
 푸는 방법은 둘입니다.
 
-1. **환경 네트워크 정책 열기** — claude.ai/code 의 환경(Environments) 설정에서 아래 호스트를 허용.
-   그러면 클라우드 루틴이 매일 알아서 채웁니다.
-   `store.kyobobook.co.kr` · `product.kyobobook.co.kr` · `event.kyobobook.co.kr`
-   (유튜브·볼라까지 원하면 `www.youtube.com` · `vo.la`)
-   문서: https://code.claude.com/docs/en/claude-code-on-the-web
+1. **환경 네트워크 정책 열기** — 이게 진짜 해결이다. 한 번만 하면 된다.
+
+   세션 화면의 **구름 아이콘 → 환경 편집 → Network access → Custom** 을 고르고
+   **Allowed domains** 에 아래를 한 줄씩 넣는다. **「Also include default list of
+   common package managers」를 반드시 체크**한다 — 안 하면 적어 넣은 것만 남고
+   npm·pypi 같은 기본 목록이 통째로 빠진다.
+
+   ```
+   *.kyobobook.co.kr
+   vo.la
+   *.youtube.com
+   ```
+
+   접근 수준은 None / Trusted(기본) / Full / Custom 네 가지고, 환경마다 따로 잡는다.
+   조직 전체에 밀어 넣는 허용목록은 없다 — 환경을 쓰는 사람이 각자 잡아야 한다.
+   문서: https://code.claude.com/docs/en/cloud-environments#network-access
+
+   **열면 자동이 되는 것** — 교보 순위, 교보 펀딩 (둘 다 로그인 없는 공개 데이터).
+   **열어도 안 되는 것** — 볼라(로그인 필요), 판매 시트(서점 포털 로그인 필요).
+   이 둘은 이전 담당자도 브라우저에서 수기로 받아 넣었다.
+   유튜브는 allowlist 와 무관하다 — MCP 커넥터 트래픽은 앤트로픽 서버를 거치므로
+   윈저 커넥터만 붙이면 된다.
 2. **로컬에서 돌리기** — 이 저장소를 클론한 내 컴퓨터의 Claude Code 세션에서
    `python3 tools/ranks.py dash.html` 을 돌리고 republish. 로컬은 네트워크 제약이 없습니다.
 
