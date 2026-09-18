@@ -153,6 +153,43 @@ svg{display:block;width:100%;height:auto;overflow:visible}
 .gloss dd{margin:3px 0 0;font-size:13px;color:var(--ink2)}
 .gloss dd b{color:var(--ink);font-weight:600}
 
+/* ── 작은 숫자 타일 ── 큰 숫자 줄(.kpis)보다 한 단 아래. 구획 안에서 쓴다. */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;margin-bottom:14px}
+.tile{background:var(--surface);padding:13px 15px}
+.tile .l{font-size:11.5px;color:var(--ink2)}
+.tile .v{font-size:19px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.tile .n{font-size:11.5px;color:var(--ink3);margin-top:2px}
+
+/* ── 콘텐츠 줄 ── 게시물·영상·광고 소재를 그림으로 훑는 자리. 가로로만 민다. */
+.strip{display:flex;gap:10px;overflow-x:auto;padding-bottom:10px;scrollbar-width:thin}
+.strip .it{flex:0 0 146px;border:1px solid var(--rule);border-radius:11px;overflow:hidden;
+  background:var(--surface);text-decoration:none;color:inherit;display:block}
+.strip a.it:hover{border-color:var(--ink3)}
+.strip .ph{position:relative;width:100%;aspect-ratio:4/5;background:var(--sunk);overflow:hidden}
+.strip .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.strip .ph .alt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:11.5px;color:var(--ink3);text-align:center;padding:10px;line-height:1.45}
+.strip .cap{padding:9px 10px 11px}
+.strip .cap b{display:block;font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.strip .cap span{display:block;font-size:11px;color:var(--ink2);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── 자료 신선도 ── 원천마다 들어오는 속도가 달라 '기준일' 하나로는 무엇이 밀렸는지 모른다 */
+.fresh{display:flex;flex-wrap:wrap;gap:8px}
+.fr{border:1px solid var(--rule);border-left-width:3px;border-radius:9px;padding:8px 12px;background:var(--surface)}
+.fr b{display:block;font-size:12.5px;font-weight:600}
+.fr span{font-size:11.5px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.fr.ok{border-left-color:var(--good)} .fr.warn{border-left-color:var(--warn)} .fr.bad{border-left-color:var(--bad)}
+.fr em{font-style:normal;font-size:10.5px;color:var(--ink3);border:1px solid var(--rule);
+  border-radius:999px;padding:0 6px;margin-left:5px}
+
+/* ── 접었다 펴는 표 ── 긴 목록은 기본으로 접어 둔다 */
+details.more{margin-top:12px}
+details.more summary{cursor:pointer;font-size:12.5px;color:var(--ink2);padding:7px 0;font-weight:500}
+details.more summary:hover{color:var(--ink)}
+details.more[open] summary{margin-bottom:8px}
+
 .note{font-size:12.5px;color:var(--ink2);margin-top:12px}
 .note b{color:var(--ink);font-weight:600}
 .stale{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--warn);font-weight:500}

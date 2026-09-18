@@ -52,6 +52,20 @@
         <dd><b>위탁</b>은 서점에 깔아두고 팔린 만큼만 정산, 안 팔리면 돌아옵니다(반품).
         <b>매절</b>은 서점이 아예 사가는 것이라 반품이 없습니다.</dd>
 
+        <dt>저장 · 공유 <em>인스타 · 유튜브</em></dt>
+        <dd>좋아요보다 <b>훨씬 무거운 신호</b>입니다. 나중에 다시 보려고 담아두거나 남에게 보낸 것이라,
+        이 둘이 높은 게시물이 실제 구매로 이어질 확률이 큽니다. 조회수만 높고 저장·공유가 낮으면
+        "스쳐 지나간" 콘텐츠입니다.</dd>
+
+        <dt>링크 누른 수 <em>외부링크 유입</em></dt>
+        <dd>게시물을 보고 <b>실제로 책 페이지까지 넘어간 횟수</b>입니다. 콘텐츠와 판매를 잇는
+        가장 가까운 숫자라 조회수보다 이걸 먼저 보셔도 됩니다.</dd>
+
+        <dt>짧은 링크 <em>vo.la</em></dt>
+        <dd>경로마다 다른 주소를 만들어 붙여 둔 것입니다. 어느 인스타 계정에서 왔는지,
+        블로그에서 왔는지를 구분하려고 씁니다. 같은 사람이 두 번 누르면 <b>두 번으로 셉니다</b> —
+        메타 리포트의 클릭 수와 숫자가 다른 이유입니다.</dd>
+
         <dt>교보 순위가 여러 개인 이유</dt>
         <dd><b>온라인</b>은 인터넷 교보에서 팔린 것만, <b>종합</b>은 전국 매장까지 합친 것입니다.
         분야(인문·자기계발) 순위는 그 분야 안에서의 등수라 항상 종합보다 높게 나옵니다.</dd>
@@ -176,10 +190,13 @@ function stackChart(labels, series, opts){
   if (opts.line){
     const lv = opts.line.vals, lmx = Math.max(...lv, 1);
     const pts = lv.map((v,i) => (PL+step*i+step/2).toFixed(1)+','+(PT+ih-ih*(v/lmx)).toFixed(1)).join(' ');
+    /* 오른쪽 눈금은 선의 단위로 적는다 — 돈일 수도, 횟수일 수도 있다.
+       여기를 won 으로 고정해 두면 클릭 수에 '원'이 붙는다. 실제로 그랬다. */
+    const lfmt = opts.line.fmt || won;
     line = '<polyline points="'+pts+'" fill="none" stroke="'+opts.line.c
          + '" stroke-width="2" stroke-linejoin="round"/>'
          + '<text x="'+(W-PR+8)+'" y="'+(PT+10)+'" font-size="10.5" fill="var(--ink3)" '
-         + 'font-family="IBM Plex Mono,monospace">'+won(lmx)+'</text>'
+         + 'font-family="IBM Plex Mono,monospace">'+lfmt(lmx)+'</text>'
          + '<text x="'+(W-PR+8)+'" y="'+(PT+ih)+'" font-size="10.5" fill="var(--ink3)" '
          + 'font-family="IBM Plex Mono,monospace">0</text>';
   }
@@ -275,6 +292,367 @@ function fundBlock(k){
     + '</div></div></div>';
 }
 
+/* ══ 여기서부터: 옛 대시보드가 가진 나머지 — 메타 광고 상세 · 인스타 · 페북 · 유튜브 · 짧은 링크 ══ */
+
+const TH  = D.thumbs || {};                       /* {ig:{},yt:{},fb:{},ad:{}} — base64 그림 */
+const ADT = (D.adThumb  || {}).post   || {};      /* '책|소재명|#순위' → 썸네일 열쇠 */
+const IGX = (D.igExtra  || {}).post   || {};      /* 게시물 → [외부링크 유입, 프로필 방문, ·, 릴스여부] */
+const IGF = Object.assign({asOf:'', src:'', cut:0, post:{}}, D.igFollow || {});
+const YT  = D.ytData || null;
+const VL  = D.volaDaily || null;
+const META = D.meta || {};
+/* 채널 색 — 옛 대시보드와 같은 색을 쓴다. 두 화면을 오가도 같은 채널이 같은 색이어야 한다. */
+const CHC = {B:'#2a78d6', P:'#eb6834', F:'#1baf7a', Y:'#c0392b'};
+const IGACC = META.igAcc || {B:'북타쿠', P:'1분지혜'};
+
+const cmp = n => n >= 10000 ? (n/10000).toFixed(n>=100000?0:1)+'만' : nf(n);
+const kday = t => String(t||'').slice(0,10);      /* '2026-07-15T06:19' → '2026-07-15' */
+const pct  = (a,b) => b ? (a/b*100) : 0;
+const sum  = a => a.reduce((x,y)=>x+(+y||0),0);
+const dayGap = (a,b) => Math.round((Date.parse(b+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'))/86400000);
+
+function tile(l, v, n){
+  return '<div class="tile"><div class="l">'+esc(l)+'</div><div class="v">'+v+'</div>'
+       + (n ? '<div class="n">'+n+'</div>' : '') + '</div>';
+}
+function sech(h2, p, stale){
+  return '<div class="sech"><h2>'+esc(h2)+'</h2>' + (p ? '<p>'+p+'</p>' : '')
+       + (stale ? '<span class="stale">'+esc(stale)+'</span>' : '') + '</div>';
+}
+/* 그림 줄. 그림이 없으면 글자 카드로 떨어진다 — 줄이 어긋나지 않게 자리는 그대로 차지한다. */
+function strip(items){
+  if (!items.length) return '';
+  return '<div class="strip">' + items.map(it => {
+    const inner = '<div class="ph">'
+        + (it.img ? '<img src="'+it.img+'" alt="'+esc(it.alt||'')+'" loading="lazy">'
+                  : '<div class="alt">'+esc(it.alt||'그림 없음')+'</div>')
+        + '</div><div class="cap"><b>'+it.main+'</b><span>'+esc(it.sub||'')+'</span></div>';
+    return it.url ? '<a class="it" href="'+esc(it.url)+'" target="_blank" rel="noopener">'+inner+'</a>'
+                  : '<div class="it">'+inner+'</div>'; }).join('') + '</div>';
+}
+/* 긴 목록은 접어 둔다 — 펴 보고 싶은 사람만 본다. */
+function moreTable(label, head, rows, total){
+  if (!rows.length) return '';
+  return '<details class="more"><summary>'+esc(label)+'</summary>'
+    + '<div class="panel scroll"><table><thead><tr>'+head+'</tr></thead><tbody>' + rows.join('')
+    + (total > rows.length ? '<tr><td colspan="9" class="muted" style="text-align:left">'
+        + '위 '+rows.length+'건만 · 전체 '+nf(total)+'건</td></tr>' : '')
+    + '</tbody></table></div></details>';
+}
+
+/* ── 자료가 언제까지 들어왔나 ──
+   원천마다 들어오는 속도가 다르다. 기준일 하나만 적어 두면 무엇이 밀렸는지 알 수 없어서,
+   "순위가 안 움직인 건지 수집이 죽은 건지"를 구별 못 한다. 그래서 원천별로 따로 보여준다. */
+function freshBlock(){
+  const ymd = s => { s = String(s||''); return s.length===8 ? s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8) : s.slice(0,10); };
+  const rows = [
+    {n:'판매',        d:D.collected,               how:'사람이 입력'},
+    {n:'메타 광고',   d:ADASOF,                    how:'자동'},
+    {n:'인스타그램',  d:kday(META.igAsOf),         how:'자동'},
+    {n:'페이스북',    d:kday(META.fbAsOf),         how:'자동'},
+    {n:'교보 등수',   d:ymd(D.rankAsOf),           how:'자동'},
+    {n:'교보 펀딩',   d:kday((D.funding||{}).asOf), how:'자동'},
+    {n:'유튜브',      d:YT ? YT.through : null,    how:'사람이 입력'},
+    {n:'짧은 링크',   d:VL ? VL.to : null,         how:'사람이 입력'},
+  ].filter(r => r.d);
+  const today = [META.lastAuto, ADASOF, ASOF].filter(Boolean).sort().pop();
+  const fail = (D.rankLastTry && D.rankLastTry.ok === false) ? '수집 실패' : '';
+  return '<div class="sec">' + sech('자료가 언제까지 들어왔나',
+      '원천마다 들어오는 속도가 다릅니다 · 오늘 기준 ' + esc(today))
+    + '<div class="fresh">' + rows.map(r => {
+        const lag = dayGap(r.d, today);
+        const cls = lag <= 1 ? 'ok' : lag <= 3 ? 'warn' : 'bad';
+        const word = lag <= 0 ? '오늘' : lag === 1 ? '어제' : lag + '일 전';
+        return '<div class="fr '+cls+'"><b>'+esc(r.n)+'<em>'+esc(r.how)+'</em></b>'
+             + '<span>'+esc(r.d.slice(5).replace('-','/'))+' · '+word
+             + (r.n==='교보 등수' && fail ? ' · '+fail : '')+'</span></div>'; }).join('')
+    + '</div></div>';
+}
+
+/* ── 메타 광고 ──
+   일별 [날짜, 쓴 돈, 노출, 도달, 클릭, CTR, CPC]. 전체 탭은 책 색으로 쌓고, 책별 탭은 한 권만 그린다. */
+function adBlock(keys, isAll){
+  const rows = keys.flatMap(x => (D.books[x].daily||[]));
+  if (!rows.length) return '';
+  const days = [...new Set(rows.map(r=>r[0]))].sort().slice(-30);
+  const inWin = rows.filter(r => r[0] >= days[0]);
+  const spend = sum(inWin.map(r=>r[1])), imps = sum(inWin.map(r=>r[2]));
+  const reach = sum(inWin.map(r=>r[3])), clicks = sum(inWin.map(r=>r[4]));
+  const units = keys.reduce((a,x)=>a+D.books[x].sales.filter(r=>r[0]>=days[0]).reduce((s,r)=>s+sold(r),0),0);
+
+  const series = keys.map(x => {
+    const m = new Map((D.books[x].daily||[]).map(r=>[r[0], +r[1]||0]));
+    return {name:D.books[x].short, c:BC[x], vals:days.map(d=>m.get(d)||0)};
+  }).filter(s => s.vals.some(v=>v>0));
+  const clickMap = new Map(days.map(d => [d, sum(inWin.filter(r=>r[0]===d).map(r=>r[4]))]));
+
+  let h = '<div class="sec">' + sech('광고에 얼마 쓰고 몇 명이 봤나',
+      '최근 '+days.length+'일 · 메타(인스타·페북) 광고계정 '+esc(D.account))
+    + '<div class="tiles">'
+    + tile('쓴 돈', won(spend), '하루 평균 '+won(spend/days.length))
+    + tile('보여진 횟수', cmp(imps)+'회', '본 사람 '+cmp(reach)+'명')
+    + tile('눌린 횟수', nf(clicks)+'회', '본 사람 중 '+pct(clicks,imps).toFixed(1)+'%가 누름')
+    + tile('한 번 눌리는 데', nf(clicks?spend/clicks:0)+'원', '같은 돈으로 몇 명 데려오나')
+    + tile('같은 사람에게 몇 번', reach?(imps/reach).toFixed(1)+'번':'—', '노출 ÷ 도달')
+    + tile('한 권 팔려고', units?nf(spend/units)+'원':'—', '그 기간 '+nf(units)+'부 판매')
+    + '</div>'
+    + '<div class="chart"><div class="legend">'
+    + series.map(s=>'<span><i style="background:'+s.c+'"></i>'+esc(s.name)+'</span>').join('')
+    + '<span><i style="background:var(--ink)"></i>눌린 횟수</span></div>'
+    + stackChart(days, series, {h:230, line:{vals:days.map(d=>clickMap.get(d)||0),
+        c:'var(--ink)', fmt:v=>nf(v)+'회'}})
+    + '</div>';
+
+  /* 어디에 나갔나 — 인스타/페북/스레드 */
+  const plat = {};
+  keys.forEach(x => (D.books[x].platforms||[]).forEach(p => {
+    const a = plat[p[0]] || (plat[p[0]] = [0,0,0]);
+    a[0]+=+p[1]||0; a[1]+=+p[2]||0; a[2]+=+p[3]||0; }));
+  /* 메타는 안 쓴 지면까지 1원 단위로 돌려준다. 그대로 그리면 칸이 실오라기처럼 쪼개져
+     정작 인스타·페북이 안 읽힌다 — 0.5% 미만은 '그 밖'으로 묶는다. */
+  let pl = Object.entries(plat).filter(([,v])=>v[0]>0).sort((a,b)=>b[1][0]-a[1][0]);
+  if (pl.length){
+    const grand = sum(pl.map(p=>p[1][0])) || 1;
+    const small = pl.filter(p => p[1][0]/grand < 0.005);
+    if (small.length > 1){
+      pl = pl.filter(p => p[1][0]/grand >= 0.005);
+      pl.push(['그 밖 '+small.length+'곳', [sum(small.map(p=>p[1][0])), sum(small.map(p=>p[1][1])),
+                                           sum(small.map(p=>p[1][2]))]]);
+    }
+    const tot = grand;
+    const PC = {Instagram:'#d2649a', Facebook:'#2a78d6', Threads:'#5b6674'};
+    h += '<div class="sec" style="margin-top:20px">' + sech('광고가 어디에 나갔나', '전 기간 광고비 기준')
+      + '<div class="panel" style="padding:18px 20px">'
+      + '<div class="mix">' + pl.map(([n,v]) => {
+          const p = v[0]/tot*100;
+          return '<div style="width:'+p.toFixed(2)+'%;background:'+(PC[n]||'#8a94a3')+'" title="'+esc(n)+' '+won(v[0])+'">'
+               + (p>9?p.toFixed(0)+'%':'')+'</div>'; }).join('') + '</div>'
+      + '<div class="mixkey">' + pl.map(([n,v]) =>
+          '<span><i style="background:'+(PC[n]||'#8a94a3')+'"></i>'+esc(n)+' <b>'+won(v[0])+'</b> '
+          + '<span class="muted">클릭 '+nf(v[2])+'</span></span>').join('') + '</div>'
+      + '</div></div>';
+  }
+  return h + '</div>';
+}
+
+/* ── 광고 소재 그림 줄 (책별 탭) ── */
+function adThumbStrip(k){
+  const ads = (D.books[k].ads||[]).slice(0,10);
+  if (!ads.length || !TH.ad) return '';
+  const items = ads.map((a,i) => ({
+    img: (TH.ad||{})[ADT[k+'|'+a[0]+'|#'+i]] || null,
+    main: won(a[1]), sub: '클릭 '+nf(a[3])+' · 한 번 '+nf(a[5])+'원', alt: a[0] }));
+  return '<p class="note" style="margin:16px 0 8px"><b>돈을 많이 쓴 소재</b> — 광고비 순</p>' + strip(items);
+}
+
+/* ── 인스타그램 ──
+   게시물 [올린때, 계정, 유형, 조회, 도달, 저장, 공유, 코드] · igExtra [링크유입, 프로필방문, ·, 릴스여부] */
+function igBlock(k){
+  const ps = (D.books[k].igPosts||[]).slice();
+  if (!ps.length) return '';
+  const views = sum(ps.map(p=>p[3])), saves = sum(ps.map(p=>p[5])), shares = sum(ps.map(p=>p[6]));
+  const link = sum(ps.map(p => { const x=IGX[p[7]]; return x && !x[3] ? x[0] : 0; }));
+  const visit= sum(ps.map(p => { const x=IGX[p[7]]; return x && !x[3] ? x[1] : 0; }));
+  const foll = ps.reduce((a,p)=>a+(IGF.post[p[7]]!=null?IGF.post[p[7]]:0),0);
+  const byAcc = {};
+  ps.forEach(p => { const a = byAcc[p[1]] || (byAcc[p[1]]={n:0,v:0}); a.n++; a.v += +p[3]||0; });
+  const top = ps.slice().sort((a,b)=>b[3]-a[3]);
+  const url = p => 'https://www.instagram.com/p/'+p[7]+'/';
+
+  const rows = top.slice(0,25).map(p => {
+    const x = IGX[p[7]];
+    const two = !x ? '<td>—</td><td>—</td>'
+      : x[3] ? '<td colspan="2" class="muted" style="font-size:11.5px">릴스는 안 줍니다</td>'
+             : '<td>'+nf(x[0])+'</td><td>'+nf(x[1])+'</td>';
+    return '<tr><td>'+esc(kday(p[0]).slice(2))+'</td>'
+      + '<td><span class="bk" style="--bc:'+CHC[p[1]]+'"><i></i>'+esc(IGACC[p[1]]||p[1])+'</span></td>'
+      + '<td class="big">'+nf(p[3])+'</td><td>'+nf(p[4])+'</td><td>'+nf(p[5])+'</td><td>'+nf(p[6])+'</td>'
+      + two + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>'; });
+
+  return '<div class="sec">' + sech('인스타그램에 올린 것',
+      Object.entries(byAcc).map(([a,v])=>esc(IGACC[a]||a)+' '+v.n+'건').join(' · ')
+      + ' · 광고 아닌 우리 콘텐츠입니다')
+    + '<div class="tiles">'
+    + tile('몇 번 보여졌나', cmp(views)+'회', ps.length+'개 게시물')
+    + tile('저장', nf(saves)+'회', views?'조회 대비 '+pct(saves,views).toFixed(2)+'%':'—')
+    + tile('공유', nf(shares)+'회', views?'조회 대비 '+pct(shares,views).toFixed(2)+'%':'—')
+    + tile('링크 누른 수', nf(link)+'회', '상세페이지로 넘어간 수')
+    + tile('프로필 보러 간 수', nf(visit)+'회', '')
+    + (foll ? tile('새 팔로우', nf(foll)+'명', esc(IGF.asOf)+' 기준 · 앱에서 옮긴 값') : '')
+    + '</div>'
+    + strip(top.slice(0,10).map(p => ({
+        url:url(p), img:(TH.ig||{})[p[7]]||null, main:cmp(p[3])+' 조회',
+        sub:kday(p[0]).slice(2)+' · 저장 '+nf(p[5]), alt:IGACC[p[1]]||'인스타그램' })))
+    + moreTable('게시물 하나하나 보기 — 조회 많은 순 ('+ps.length+'건)',
+        '<th>올린 날</th><th>계정</th><th>몇 번<span class="t2">조회</span></th>'
+        + '<th>몇 명<span class="t2">도달</span></th><th>저장</th><th>공유</th>'
+        + '<th>링크<span class="t2">누름</span></th><th>프로필<span class="t2">방문</span></th><th>링크</th>',
+        rows, ps.length)
+    + (META.igNote ? '<p class="note">'+esc(META.igNote)+'</p>' : '')
+    + '</div>';
+}
+
+/* ── 페이스북 ── [올린때, 도달, 조회, 좋아요, 댓글, 공유, 링크클릭, id] */
+function fbBlock(k){
+  const ps = (D.books[k].fbPosts||[]).slice();
+  if (!ps.length) return '';
+  const views = sum(ps.map(p=>p[2])), reach = sum(ps.map(p=>p[1]));
+  const likes = sum(ps.map(p=>p[3])), shares = sum(ps.map(p=>p[5])), link = sum(ps.map(p=>p[6]));
+  const top = ps.slice().sort((a,b)=>b[2]-a[2]);
+  const url = p => 'https://www.facebook.com/reel/'+p[7]+'/';
+  const rows = top.slice(0,25).map(p =>
+    '<tr><td>'+esc(kday(p[0]).slice(2))+'</td><td class="big">'+nf(p[2])+'</td><td>'+nf(p[1])+'</td>'
+    + '<td>'+nf(p[3])+'</td><td>'+nf(p[4])+'</td><td>'+nf(p[5])+'</td><td>'+nf(p[6])+'</td>'
+    + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>');
+  const byLink = ps.filter(p=>p[6]>0).sort((a,b)=>b[6]-a[6]).slice(0,10);
+
+  return '<div class="sec">' + sech('페이스북에 올린 것',
+      esc(META.fbPage||'페이스북 페이지')+' · '+ps.length+'건 · 광고 아닌 우리 콘텐츠입니다')
+    + '<div class="tiles">'
+    + tile('몇 번 보여졌나', cmp(views)+'회', '본 사람 '+cmp(reach)+'명')
+    + tile('좋아요', nf(likes)+'개', views?'조회 대비 '+pct(likes,views).toFixed(2)+'%':'—')
+    + tile('공유', nf(shares)+'회', '')
+    + tile('링크 누른 수', nf(link)+'회', views?'조회 대비 '+pct(link,views).toFixed(3)+'%':'—')
+    + '</div>'
+    + strip((byLink.length?byLink:top.slice(0,10)).map(p => ({
+        url:url(p), img:(TH.fb||{})[p[7]]||null,
+        main:(byLink.length?nf(p[6])+' 링크 누름':cmp(p[2])+' 조회'),
+        sub:kday(p[0]).slice(2)+' · 조회 '+cmp(p[2]), alt:'페이스북 릴스' })))
+    + moreTable('게시물 하나하나 보기 — 조회 많은 순 ('+ps.length+'건)',
+        '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th><th>몇 명<span class="t2">도달</span></th>'
+        + '<th>좋아요</th><th>댓글</th><th>공유</th><th>링크<span class="t2">누름</span></th><th>링크</th>',
+        rows, ps.length)
+    + '</div>';
+}
+
+/* ── 유튜브 (책별) ── 영상 [id, 제목, 올린날, 조회, 좋아요, 댓글, 저장, 쇼츠여부]
+   일별 [조회, 저장, 좋아요, 댓글, 공유] */
+function ytBlock(k){
+  const b = YT && YT.books ? YT.books[k] : null;
+  if (!b || !b.n) return '';
+  const days = Object.keys(b.daily||{}).sort().slice(-30);
+  const vids = (b.videos||[]).slice();
+  const vurl = v => 'https://www.youtube.com/'+(v[7]?'shorts/':'watch?v=')+v[0];
+  const lag = YT.through && YT.asOf ? dayGap(YT.through, kday(YT.asOf)) : 0;
+  const rows = vids.slice(0,25).map(v =>
+    '<tr><td>'+esc(String(v[2]).slice(2))+'</td><td class="big">'+nf(v[3])+'</td><td>'+nf(v[4])+'</td>'
+    + '<td>'+nf(v[5])+'</td><td>'+nf(v[6])+'</td>'
+    + '<td style="text-align:left"><a href="'+vurl(v)+'" target="_blank" rel="noopener">'+esc(v[1])+' ↗</a></td></tr>');
+
+  return '<div class="sec">' + sech('유튜브에 올린 것',
+      (YT.ch?esc(YT.ch.title)+' · ':'')+'영상 '+nf(b.n)+'건 · 광고 아닌 우리 콘텐츠입니다',
+      lag > 1 ? '저장·공유와 일별 그래프는 '+esc(YT.through)+'까지만 확정' : '')
+    + '<div class="tiles">'
+    + tile('몇 번 보여졌나', cmp(b.views)+'회', '영상 '+nf(b.n)+'건')
+    + tile('좋아요', nf(b.likes)+'개', b.views?'조회 대비 '+pct(b.likes,b.views).toFixed(2)+'%':'—')
+    + tile('저장', nf(b.saves)+'회', '재생목록에 담은 횟수')
+    + tile('공유', nf(b.shares)+'회', '')
+    + tile('댓글', nf(b.comments)+'개', '')
+    + '</div>'
+    + (days.length ? '<div class="chart"><div class="legend">'
+        + '<span><i style="background:'+CHC.Y+'"></i>날마다 조회수</span></div>'
+        + stackChart(days, [{name:'유튜브', c:CHC.Y, vals:days.map(d=>(b.daily[d]||[0])[0]||0)}], {h:200})
+        + '</div>' : '')
+    + strip(vids.slice(0,10).map(v => ({
+        url:vurl(v), img:(TH.yt||{})[v[0]]||'https://i.ytimg.com/vi/'+v[0]+'/hqdefault.jpg',
+        main:cmp(v[3])+' 조회', sub:String(v[2]).slice(2)+' · 좋아요 '+nf(v[4]), alt:String(v[1]).slice(0,24) })))
+    + moreTable('영상 하나하나 보기 — 조회 많은 순 ('+vids.length+'건)',
+        '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th><th>좋아요</th><th>댓글</th>'
+        + '<th>저장</th><th>제목</th>', rows, vids.length)
+    + '</div>';
+}
+
+/* ── 유튜브 채널 (전체 탭) ── */
+function ytChannelBlock(){
+  if (!YT || !YT.ch) return '';
+  const c = YT.ch, days = Object.keys(YT.chDaily||{}).sort().slice(-30);
+  const books = Object.entries(YT.books||{}).filter(([,v])=>v.n).sort((a,b)=>b[1].views-a[1].views);
+  return '<div class="sec">' + sech('유튜브 채널',
+      '<a href="'+esc(c.url)+'" target="_blank" rel="noopener">'+esc(c.title)+' '+esc(c.handle)+'</a>'
+      + ' · 우리 책을 알리는 자사 채널',
+      YT.through ? YT.through+'까지 집계' : '')
+    + '<div class="tiles">'
+    + tile('구독자', cmp(c.subs)+'명', c.subsApprox?'유튜브가 반올림해 줍니다':'')
+    + tile('올린 영상', nf(c.videos)+'건', '책 관련 '+nf(sum(books.map(b=>b[1].n)))+'건')
+    + tile('채널 전체 조회', cmp(c.views)+'회', '')
+    + books.slice(0,3).map(([bk,v]) => tile(esc(D.books[bk]?D.books[bk].short:bk)+' 영상',
+        cmp(v.views)+'회', nf(v.n)+'건 · 좋아요 '+nf(v.likes))).join('')
+    + '</div>'
+    + (days.length ? '<div class="chart"><div class="legend">'
+        + '<span><i style="background:'+CHC.Y+'"></i>채널 전체 · 날마다 조회수</span></div>'
+        + stackChart(days, [{name:'채널 조회', c:CHC.Y, vals:days.map(d=>(YT.chDaily[d]||[0])[0]||0)}], {h:200})
+        + '</div>' : '')
+    + '</div>';
+}
+
+/* ── 짧은 링크(볼라) ──
+   어느 경로로 상세페이지에 들어왔는지. 메타 광고 링크는 자릿수가 달라 한 막대에 섞으면
+   나머지가 안 보인다 — 그래서 광고와 오가닉을 갈라 놓는다. */
+function volaBlock(k){
+  if (!VL || !VL.links) return '';
+  const mine = VL.links.filter(l => k==='all' || (VL.book||{})[l[0]] === k);
+  if (!mine.length) return '';
+  const isAd = g => g === 'meta' || g === 'ad';
+  /* 전체 탭에서는 같은 이름의 경로가 책마다 따로 있다('밈케터'가 둘). 책을 붙여 구별한다. */
+  const bookOf = sl => { const bk = (VL.book||{})[sl]; return bk && D.books[bk] ? D.books[bk].short : ''; };
+  const rowsAll = mine.map(l => {
+    const day = (VL.daily||{})[l[0]] || {};
+    const tag = k==='all' && bookOf(l[0]) ? l[1]+' · '+bookOf(l[0]) : l[1];
+    return {slug:l[0], name:tag, ad:isAd(l[2]), day,
+            win:sum(Object.values(day)),
+            tot:(VL.total||{})[l[0]] != null ? VL.total[l[0]] : sum(Object.values(day))};
+  }).filter(r => r.tot > 0).sort((a,b)=>b.tot-a.tot);
+  if (!rowsAll.length) return '';
+  const org = rowsAll.filter(r=>!r.ad), ad = rowsAll.filter(r=>r.ad);
+  const days = [...new Set(rowsAll.flatMap(r=>Object.keys(r.day)))].sort().slice(-30);
+  const SER = ['#2a78d6','#eb6834','#1baf7a','#c99000','#d2649a','#8a94a3'];
+  const live = org.filter(r=>r.win>0).sort((a,b)=>b.win-a.win);
+  const series = live.slice(0,5).map((r,i)=>({name:r.name, c:SER[i], vals:days.map(d=>r.day[d]||0)}));
+  if (live.length>5) series.push({name:'나머지 '+(live.length-5)+'개', c:SER[5],
+      vals:days.map(d => sum(live.slice(5).map(r=>r.day[d]||0)))});
+
+  const tbl = rowsAll.slice(0,25).map(r =>
+    '<tr><td>'+esc(r.name)+(r.ad?' <span class="muted">(광고)</span>':'')+'</td>'
+    + '<td class="muted" style="text-align:left">'+esc(r.slug)+'</td>'
+    + '<td class="big">'+nf(r.tot)+'</td><td>'+nf(r.win)+'</td></tr>');
+
+  return '<div class="sec">' + sech('짧은 링크를 몇 번 눌렀나',
+      '어느 경로로 책 페이지에 들어왔는지 · 링크 '+rowsAll.length+'개',
+      VL.to ? VL.to+'까지' : '')
+    + '<div class="tiles">'
+    + tile('광고 링크', nf(sum(ad.map(r=>r.tot)))+'회', '메타 광고에 붙인 링크')
+    + tile('그 밖의 경로', nf(sum(org.map(r=>r.tot)))+'회', '인스타 프로필·블로그·단톡방 등')
+    + (org.length ? tile('가장 많이 눌린 경로', esc(org[0].name), nf(org[0].tot)+'회') : '')
+    + '</div>'
+    + (series.length ? '<div class="chart"><div class="legend">'
+        + series.map(s=>'<span><i style="background:'+s.c+'"></i>'+esc(s.name)+'</span>').join('')
+        + '</div>' + stackChart(days, series, {h:200})
+        + '<p class="note" style="margin:4px 0 8px">광고 링크는 자릿수가 달라 이 그래프에서 뺐습니다 — '
+        + '넣으면 나머지가 한 줄로 눌려 안 보입니다.</p></div>' : '')
+    + moreTable('링크 하나하나 보기 — 누적 많은 순 ('+rowsAll.length+'개)',
+        '<th>경로</th><th>짧은 주소</th><th>누적<span class="t2">클릭</span></th>'
+        + '<th>최근 30일<span class="t2">클릭</span></th>', tbl, rowsAll.length)
+    + ((VL.gap||[]).length ? '<p class="note"><b>'+VL.gap.map(esc).join(' · ')
+        + '</b> 는 수집이 비어 있습니다 — 그날 클릭이 0이었던 게 아닙니다.</p>' : '')
+    + '</div>';
+}
+
+/* ── 돈 계산 기준 ── 화면의 '들어온 돈'이 어떤 가정 위에 서 있는지 밝혀 둔다 */
+function econBlock(){
+  const E = D.econ; if (!E) return '';
+  return '<div class="sec">' + sech('돈 계산 기준', '이 화면의 금액이 어떤 값으로 계산됐는지')
+    + '<div class="panel" style="padding:16px 20px">'
+    + '<div class="tiles" style="margin:0">'
+    + tile('출판사 몫', Math.round(E.supplyRate*100)+'%', '정가에서 서점 몫을 뺀 비율')
+    + D.order.map(x => tile(esc(D.books[x].short)+' 정가', nf(D.list[x])+'원',
+        '한 권 팔리면 '+nf(D.list[x]*E.supplyRate)+'원')).join('')
+    + '</div>'
+    + '<p class="note">'+esc(E.supplyNote||'')+'</p>'
+    + '<p class="note">'+esc(E.listNote||'')+'</p>'
+    + (E.varCostNote ? '<p class="note"><b>아직 안 뺀 것</b> — '+esc(E.varCostNote)+'</p>' : '')
+    + '</div></div>';
+}
+
 /* ── 그리기 ── */
 function select(k){
   CUR = k;
@@ -348,6 +726,11 @@ function select(k){
     h += '<div class="sec"><div class="sech"><h2>어느 서점에서 팔렸나</h2><p>최근 30일 합계</p></div>'
       + '<div class="panel" style="padding:18px 20px">' + mixBlock(rows30) + '</div></div>';
 
+    h += adBlock(D.order, true);
+    h += ytChannelBlock();
+    h += volaBlock('all');
+    h += econBlock();
+
   } else {
     const b = D.books[k];
     const days = b.sales.map(r=>r[0]).slice(-45);
@@ -369,6 +752,7 @@ function select(k){
 
     h += fundBlock(k);
     h += rankBlock(k);
+    h += adBlock([k], false);
 
     /* 광고 소재 */
     if ((b.ads||[]).length){
@@ -380,9 +764,15 @@ function select(k){
         + '<th>한 번 눌리는 데<span class="t2">CPC</span></th></tr></thead><tbody>'
         + b.ads.map(a => '<tr><td>'+esc(a[0])+'</td><td class="big">'+won(a[1])+'</td><td>'+nf(a[2])
             + '</td><td>'+nf(a[3])+'</td><td>'+(+a[4]).toFixed(1)+'%</td><td>'+nf(a[5])+'원</td></tr>').join('')
-        + '</tbody></table></div></div>';
+        + '</tbody></table></div>' + adThumbStrip(k) + '</div>';
     }
+
+    h += igBlock(k);
+    h += fbBlock(k);
+    h += ytBlock(k);
+    h += volaBlock(k);
   }
+  h += freshBlock();
   document.getElementById('view').innerHTML = h;
   scrollTo({top:0, behavior:'smooth'});
 }
