@@ -34,7 +34,50 @@ body{margin:0;background:var(--ground);color:var(--ink);
 .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
 .num{font-variant-numeric:tabular-nums}
 
-.wrap{max-width:1240px;margin:0 auto;padding-inline:20px;padding-block:0 72px}
+.wrap{max-width:1280px;margin:0 auto;padding-inline:20px;padding-block:0 72px}
+
+/* ── 좌측 탭 + 본문 ──
+   구획이 열 몇 개를 넘어가면 스크롤만으로는 어디에 뭐가 있는지 알 수 없다.
+   왼쪽에 갈래를 세워 두고 눌러서 건너뛴다. 좁은 화면에서는 위쪽 가로줄로 눕는다. */
+.shell{display:grid;grid-template-columns:198px minmax(0,1fr);gap:30px;align-items:start}
+#sidenav{max-width:none;margin:0;display:block}
+#side{position:sticky;top:112px;align-self:start;max-height:calc(100vh - 140px);overflow-y:auto;
+  scrollbar-width:thin;padding-top:26px}
+#side .grp{margin-bottom:16px}
+#side .grp > b{display:block;font-size:10.5px;font-weight:700;color:var(--ink3);letter-spacing:.07em;
+  text-transform:uppercase;padding:0 10px 5px}
+#side a{display:block;font-size:12.5px;color:var(--ink2);text-decoration:none;padding:5px 10px;
+  border-radius:7px;border-left:2px solid transparent;line-height:1.4}
+#side a:hover{background:var(--surface);color:var(--ink)}
+#side a[aria-current="true"]{background:var(--surface);color:var(--ink);font-weight:600;
+  border-left-color:var(--accent)}
+#main{min-width:0;padding-top:22px}
+@media(max-width:980px){
+  /* 1fr 의 자동 최소 폭은 '내용의 min-content' 다. 좌측 탭이 가로줄로 누우면 그 폭이
+     화면보다 커져 페이지 전체가 옆으로 밀린다 — minmax(0,·) 로 바닥을 0 으로 내린다. */
+  .shell{grid-template-columns:minmax(0,1fr);gap:0}
+  #side{position:sticky;top:96px;z-index:20;max-height:none;overflow:visible;padding:10px 0 8px;
+    background:var(--ground);border-bottom:1px solid var(--rule)}
+  #side nav{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;max-width:none;margin:0}
+  #side nav::-webkit-scrollbar{display:none}
+  #side .grp{margin:0;display:flex;gap:6px;flex:none}
+  #side .grp > b{display:none}
+  #side a{white-space:nowrap;border:1px solid var(--rule);border-left-width:1px;background:var(--surface)}
+  #side a[aria-current="true"]{border-color:var(--accent);border-left-width:1px}
+  #main{padding-top:14px}
+}
+
+/* ── 접었다 펴는 구획 ── 제목 줄 전체가 누르는 자리다 */
+.sech{width:100%;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.sech:hover h2{color:var(--accent)}
+.sech .chev{margin-left:auto;color:var(--ink3);font-size:11px;transition:transform .15s;flex:none}
+.sec[data-open="false"] .sech .chev{transform:rotate(-90deg)}
+.sec[data-open="false"] .secb{display:none}
+.sec[data-open="false"] .sech{margin-bottom:0}
+.secb{animation:none}
+.allbtn{font:inherit;font-size:11.5px;color:var(--ink2);background:var(--surface);border:1px solid var(--rule);
+  border-radius:7px;padding:3px 9px;cursor:pointer;margin-left:8px}
+.allbtn:hover{border-color:var(--ink3);color:var(--ink)}
 
 /* ── 머리 ── */
 /* header 는 .wrap 밖에 있으므로 음수 마진이 필요 없다 — 넣으면 화면보다 넓어져 가로 스크롤이 생긴다 */
@@ -49,14 +92,14 @@ h1{font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0}
   border-radius:7px;padding:4px 10px;cursor:pointer}
 .tbtn:hover{border-color:var(--ink3)}
 
-nav{max-width:1200px;margin:12px auto 0;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
-nav::-webkit-scrollbar{display:none}
-nav button{font:inherit;font-size:13.5px;font-weight:500;color:var(--ink2);background:none;border:0;
+header nav{max-width:1200px;margin:12px auto 0;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+header nav::-webkit-scrollbar{display:none}
+header nav button{font:inherit;font-size:13.5px;font-weight:500;color:var(--ink2);background:none;border:0;
   border-bottom:2.5px solid transparent;padding:8px 13px 10px;cursor:pointer;white-space:nowrap;
   display:inline-flex;align-items:center;gap:7px}
-nav button i{width:8px;height:8px;border-radius:2px;background:var(--bc);flex:none}
-nav button:hover{color:var(--ink)}
-nav button[aria-selected="true"]{color:var(--ink);font-weight:700;border-bottom-color:var(--bc,var(--accent))}
+header nav button i{width:8px;height:8px;border-radius:2px;background:var(--bc);flex:none}
+header nav button:hover{color:var(--ink)}
+header nav button[aria-selected="true"]{color:var(--ink);font-weight:700;border-bottom-color:var(--bc,var(--accent))}
 
 /* ── 구획 ── */
 .sec{margin-top:30px}

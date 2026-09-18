@@ -76,6 +76,20 @@ python3 tools/make_v2.py dash.html v2.html
 정가와 공급률(65%)은 어느 원천에도 없는 계약 조건이라 `tools/make_v2.py` 안에 적혀 있다 —
 바뀌면 거기를 고친다.
 
+### 주 1회 — 소재별 주간 광고 성적
+
+보고가 주 단위라 "이번 주에 뭐가 잘 됐나"가 필요한데, 아티팩트의 `payload` 에는 소재별 성적이
+**캠페인 전 기간 누적**으로만 있다. 날짜별 소재 성적은 메타에 다시 물어야 나온다.
+
+```
+ads_get_ad_entities(ad_account_id='581875957830502', level='ad',
+                    date_preset='last_7d', sort='spend_descending',
+                    fields=['name','spend','impressions','reach','clicks','ctr','cpc','campaign_name'])
+```
+
+캠페인 이름으로 책을 가른 뒤 `tools/set_ads_week.py dash.html adsWeek.json` 으로 넣는다.
+화면은 `to` 가 광고 기준일보다 이틀 넘게 뒤지면 「주 1회 갱신」 꼬리표를 단다.
+
 세 스크립트 모두 **실패해도 파일을 건드리지 않고 SKIP 하고 끝납니다.** 순위가 하루 비는 것보다
 판매·광고 갱신이 통째로 멈추는 쪽이 나쁘기 때문입니다. 그래서 순서에 상관없이 이어 돌려도 됩니다.
 

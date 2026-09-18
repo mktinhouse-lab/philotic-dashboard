@@ -28,7 +28,11 @@ BOOK_KEYS = ('title', 'short', 'pub', 'hasYp', 'sales', 'daily', 'monthly', 'ads
 #   adThumb — 광고 소재명 → 썸네일 열쇠
 #   igExtra — 게시물별 [프로필활동, 프로필방문, 팔로우, 릴스여부]
 #   igFollow— 릴스 팔로우 (인스타 API 가 안 줘서 앱에서 옮긴 값)
-WHOLE = ('econ', 'volaDaily', 'ytData', 'igExtra', 'igFollow', 'adThumb', 'thumbs')
+#   adsWeek — 최근 7일 소재별 광고 성적. 옛 대시보드는 이 블록을 안 그리지만,
+#             거기 얹어 두면 다시 만들 때마다 따라온다 (tools/set_ads_week.py 로 넣는다)
+#   ytCollab— 다른 채널과 한 협업·협찬 영상 (썸네일 포함). 다른 세션이 채워 넣는다.
+WHOLE = ('econ', 'volaDaily', 'ytData', 'igExtra', 'igFollow', 'adThumb', 'thumbs',
+         'adsWeek', 'ytCollab')
 
 # 정가와 공급률은 어느 원천에도 없다 — 계약 조건이라 사람이 적어 두는 값이다.
 # 바뀌면 여기를 고친다. 화면의 「예상 정산액」이 이 둘로 계산된다.

@@ -3,13 +3,17 @@
     <h1>필로틱 현황판</h1>
     <span class="asof">판매 <b id="asofSales"></b>까지 · 광고 <b id="asofAds"></b>까지</span>
     <span class="spacer"></span>
+    <button class="allbtn" id="allBtn" type="button">모두 펴기</button>
     <button class="tbtn" id="themeBtn" type="button">다크 모드</button>
   </div>
   <nav id="tabs" role="tablist"></nav>
 </header>
 
 <div class="wrap">
-  <div class="sec" style="margin-top:22px">
+ <div class="shell">
+  <aside id="side"><nav id="sidenav"></nav></aside>
+  <main id="main">
+  <div class="sec" style="margin-top:0">
     <div class="kpis" id="kpis"></div>
     <p class="note" id="kpiNote"></p>
   </div>
@@ -74,6 +78,8 @@
   </div>
 
   <p class="note" id="footNote"></p>
+  </main>
+ </div>
 </div>
 
 <script id="v2" type="application/json">__DATA__</script>
@@ -369,6 +375,136 @@ function freshBlock(){
     + '</div></div>';
 }
 
+/* ══ 이번 주 ══
+   주 단위로 보고하니까 이 구획 하나만 읽어도 한 주가 설명돼야 한다.
+   "지난주보다 나아졌나"가 핵심이라 모든 숫자를 직전 7일과 나란히 놓는다. */
+const WEEK = 7;
+
+/* 마지막 기록일에서 거꾸로 7일. 오늘이 아니라 **자료가 들어온 마지막 날**이 기준이다 —
+   오늘로 자르면 아직 안 들어온 하루가 늘 0으로 끼어 "지난주보다 나빠졌다"로 읽힌다. */
+function winDays(end, n, back){
+  const out = [], d = new Date(end+'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - (back||0)*n);
+  for (let i=0; i<n; i++){ out.push(d.toISOString().slice(0,10)); d.setUTCDate(d.getUTCDate()-1); }
+  return out;                                    /* 최신 → 과거 순 */
+}
+function wcmp(cur, prev, fmt){
+  const f = fmt || nf;
+  if (!prev) return '<span class="muted">지난주 없음</span>';
+  const g = cur - prev, p = (cur/prev-1)*100;
+  return '<span class="'+(g>=0?'up':'down')+'">'+(g>=0?'▲':'▼')+' '+Math.abs(p).toFixed(0)+'%</span>'
+       + ' <span class="muted">지난주 '+f(prev)+'</span>';
+}
+
+function weekBlock(keys, isAll){
+  const sCur = new Set(winDays(ASOF, WEEK, 0)), sPrev = new Set(winDays(ASOF, WEEK, 1));
+  const aCur = new Set(winDays(ADASOF, WEEK, 0)), aPrev = new Set(winDays(ADASOF, WEEK, 1));
+  const sw = [...sCur].sort();
+
+  let uCur=0, uPrev=0, rev=0, spCur=0, spPrev=0, clCur=0;
+  keys.forEach(x => {
+    const b = D.books[x], price = D.list[x]||0;
+    b.sales.forEach(r => { if (sCur.has(r[0])){ uCur += sold(r); rev += sold(r)*price*D.supplyRate; }
+                           else if (sPrev.has(r[0])) uPrev += sold(r); });
+    (b.daily||[]).forEach(r => { if (aCur.has(r[0])){ spCur += +r[1]||0; clCur += +r[4]||0; }
+                                 else if (aPrev.has(r[0])) spPrev += +r[1]||0; });
+  });
+
+  /* 유튜브는 일별이 있어서 '이번 주 조회수'를 진짜로 낼 수 있다 (게시물은 누적치뿐이다) */
+  let yCur=0, yPrev=0, yEnd=null;
+  if (YT && YT.books){
+    yEnd = YT.through || ASOF;
+    const yc = new Set(winDays(yEnd, WEEK, 0)), yp = new Set(winDays(yEnd, WEEK, 1));
+    keys.forEach(x => { const yb = YT.books[x]; if (!yb) return;
+      Object.entries(yb.daily||{}).forEach(([d,v]) => {
+        if (yc.has(d)) yCur += v[0]||0; else if (yp.has(d)) yPrev += v[0]||0; }); });
+  }
+
+  let h = '<div class="sec">' + sech('이번 주 요약',
+      '판매 '+md(sw[0])+'~'+md(sw[sw.length-1])+' · 직전 7일과 견줌')
+    + '<div class="tiles">'
+    + tile('판매', nf(uCur)+'부', wcmp(uCur, uPrev, v=>nf(v)+'부'))
+    + tile('들어온 돈', won(rev), '판 권수 × 정가의 65%')
+    + tile('광고비', won(spCur), wcmp(spCur, spPrev, won))
+    + tile('한 권 팔려고', uCur?nf(spCur/uCur)+'원':'—', '광고비 ÷ 판매 권수')
+    + tile('광고 눌린 횟수', nf(clCur)+'회', '')
+    + (YT ? tile('유튜브 조회', cmp(yCur)+'회', wcmp(yCur, yPrev, cmp)) : '')
+    + '</div></div>';
+
+  /* ── 이번 주 메타 상위 소재 ── */
+  const AW = D.adsWeek;
+  if (AW && AW.books){
+    let rows = [];
+    keys.forEach(x => (AW.books[x]||[]).forEach(a => rows.push([x].concat(a))));
+    rows.sort((a,b)=>b[2]-a[2]);
+    const shown = rows.slice(0, isAll ? 12 : 10);
+    if (shown.length){
+      const lag = dayGap(AW.to, ADASOF);
+      h += '<div class="sec">' + sech('이번 주 잘 나간 광고 소재',
+          esc(AW.from)+'~'+esc(AW.to)+' · 돈 많이 쓴 순 · 소재 '+rows.length+'개',
+          lag > 2 ? '소재별은 '+esc(AW.to)+'까지 · 주 1회 갱신' : '')
+        + '<div class="panel scroll"><table><thead><tr>'
+        + (isAll?'<th>책</th>':'') + '<th>소재</th>'
+        + '<th>쓴 돈<span class="t2">광고비</span></th><th>보여진<span class="t2">노출</span></th>'
+        + '<th>눌린<span class="t2">클릭</span></th><th>본 사람 중 누른<span class="t2">CTR</span></th>'
+        + '<th>한 번 눌리는 데<span class="t2">CPC</span></th></tr></thead><tbody>'
+        + shown.map(r => '<tr>'
+            + (isAll?'<td><span class="bk" style="--bc:'+BC[r[0]]+'"><i></i>'+esc(D.books[r[0]].short)+'</span></td>':'')
+            + '<td>'+esc(r[1])+'</td><td class="big">'+won(r[2])+'</td><td>'+nf(r[3])+'</td>'
+            + '<td>'+nf(r[5])+'</td><td>'+(+r[6]).toFixed(1)+'%</td>'
+            + '<td>'+(r[7]?nf(r[7])+'원':'—')+'</td></tr>').join('')
+        + '</tbody></table></div>'
+        + '<p class="note"><b>CTR 이 높은데 CPC 가 싼 소재</b>가 이번 주의 승자입니다 — '
+        + '같은 돈으로 더 많은 사람을 책 페이지까지 데려온 소재입니다.</p></div>';
+    }
+  }
+
+  /* ── 이번 주에 올린 콘텐츠 ── 채널을 섞지 않고 갈라서 보여준다 */
+  const since = sw[0];
+  const lanes = [];
+  const igAll = keys.flatMap(x => (D.books[x].igPosts||[]).map(p => [x].concat(p)));
+  ['B','P'].forEach(acc => {
+    const got = igAll.filter(p => p[2]===acc && kday(p[1]) >= since).sort((a,b)=>b[4]-a[4]);
+    if (got.length) lanes.push({name:(IGACC[acc]||acc)+' (인스타)', c:CHC[acc], n:got.length,
+      views:sum(got.map(p=>p[4])),
+      items: got.slice(0,8).map(p => ({url:'https://www.instagram.com/p/'+p[8]+'/',
+        img:(TH.ig||{})[p[8]]||null, main:cmp(p[4])+' 조회',
+        sub:kday(p[1]).slice(5)+' · 저장 '+nf(p[6])+(keys.length>1?' · '+D.books[p[0]].short:''),
+        alt:IGACC[acc]||'인스타그램'}))});
+  });
+  const fbGot = keys.flatMap(x => (D.books[x].fbPosts||[]).map(p=>[x].concat(p)))
+      .filter(p => kday(p[1]) >= since).sort((a,b)=>b[3]-a[3]);
+  if (fbGot.length) lanes.push({name:(META.fbPage||'페이스북')+' (페북)', c:CHC.F, n:fbGot.length,
+    views:sum(fbGot.map(p=>p[3])),
+    items: fbGot.slice(0,8).map(p => ({url:'https://www.facebook.com/reel/'+p[8]+'/',
+      img:(TH.fb||{})[p[8]]||null, main:cmp(p[3])+' 조회',
+      sub:kday(p[1]).slice(5)+' · 링크 '+nf(p[7])+(keys.length>1?' · '+D.books[p[0]].short:''),
+      alt:'페이스북 릴스'}))});
+  if (YT && YT.books){
+    const yv = keys.flatMap(x => ((YT.books[x]||{}).videos||[]).map(v=>[x].concat(v)))
+        .filter(v => String(v[3]) >= since).sort((a,b)=>b[4]-a[4]);
+    if (yv.length) lanes.push({name:(YT.ch?YT.ch.title:'유튜브')+' (유튜브)', c:CHC.Y, n:yv.length,
+      views:sum(yv.map(v=>v[4])),
+      items: yv.slice(0,8).map(v => ({url:'https://www.youtube.com/'+(v[8]?'shorts/':'watch?v=')+v[1],
+        img:(TH.yt||{})[v[1]]||'https://i.ytimg.com/vi/'+v[1]+'/hqdefault.jpg',
+        main:cmp(v[4])+' 조회', sub:String(v[3]).slice(5)+' · 좋아요 '+nf(v[5]),
+        alt:String(v[2]).slice(0,24)}))});
+  }
+  if (lanes.length){
+    h += '<div class="sec">' + sech('이번 주에 올린 콘텐츠',
+        esc(since)+' 이후 올린 것 · 조회 많은 순 · 광고 아닌 우리 콘텐츠')
+      + '<div class="tiles">' + lanes.map(l =>
+          tile(l.name, nf(l.n)+'건', '조회 '+cmp(l.views)+'회')).join('') + '</div>'
+      + lanes.map(l => '<p class="note" style="margin:16px 0 8px">'
+          + '<i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+l.c
+          + ';margin-right:7px"></i><b>'+esc(l.name)+'</b></p>' + strip(l.items)).join('')
+      + '<p class="note">게시물의 조회·저장 수는 <b>올린 뒤 지금까지의 누적</b>입니다 — '
+      + '이번 주에 올린 것만 추린 것이지, 이번 주 동안의 조회수는 아닙니다. '
+      + '유튜브만 일별 자료가 있어 위 요약의 「유튜브 조회」가 진짜 주간 수치입니다.</p></div>';
+  }
+  return h;
+}
+
 /* ── 메타 광고 ──
    일별 [날짜, 쓴 돈, 노출, 도달, 클릭, CTR, CPC]. 전체 탭은 책 색으로 쌓고, 책별 탭은 한 권만 그린다. */
 function adBlock(keys, isAll){
@@ -585,6 +721,64 @@ function ytChannelBlock(){
     + '</div>';
 }
 
+/* ── 다른 채널과 한 협업·협찬 영상 ──
+   우리 채널이 아니라 남의 채널에 나간 것이라, 조회수보다 **거기서 우리 책 페이지로 몇 명이
+   넘어왔는지**가 본론이다. 그래서 링크별 클릭을 같이 놓는다. */
+function collabBlock(k){
+  const C = D.ytCollab;
+  if (!C || (k !== 'all' && C.book !== k)) return '';
+  const vids = C.videos || [], soon = C.upcoming || [];
+  if (!vids.length && !soon.length) return '';
+  const bk = D.books[C.book];
+  const clicksOf = v => sum((v.links||[]).map(l => l[2]));
+
+  let h = '<div class="sec">' + sech('다른 채널 협업 영상',
+      (bk ? esc(bk.short)+' · ' : '') + '남의 채널에 나간 것 · 조회수보다 **넘어온 사람 수**가 본론입니다'
+        .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'),
+      C.asOf ? esc(String(C.asOf).slice(0,10))+' 기준' : '');
+
+  if (vids.length){
+    h += '<div class="tiles">'
+      + tile('나간 영상', nf(vids.length)+'건', vids.map(v=>v.ch).filter((x,i,a)=>a.indexOf(x)===i).join(' · '))
+      + tile('합쳐서 조회', cmp(sum(vids.map(v=>v.views)))+'회', '')
+      + tile('책 페이지로 넘어옴', nf(sum(vids.map(clicksOf)))+'회', '짧은 링크 클릭 합계')
+      + '</div>'
+      + vids.map(v => {
+          const cl = clicksOf(v);
+          const links = (v.links||[]).filter(l=>l[2]>0).sort((a,b)=>b[2]-a[2]);
+          return '<div class="panel" style="padding:14px 16px;margin-bottom:12px">'
+            + '<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">'
+            + (v.thumb ? '<img src="'+v.thumb+'" alt="" loading="lazy" '
+                + 'style="width:148px;aspect-ratio:16/9;object-fit:cover;border-radius:9px;flex:none">' : '')
+            + '<div style="flex:1;min-width:200px">'
+            +   '<div style="font-size:12px;color:var(--ink2)"><b style="color:var(--ink)">'+esc(v.ch)+'</b>'
+            +   (v.badge ? ' <span class="badge-x" style="font-size:10.5px;border:1px solid var(--rule);'
+                  + 'border-radius:999px;padding:1px 7px;color:var(--warn)">'+esc(v.badge)+'</span>' : '')
+            +   ' · '+esc(String(v.up||'').slice(0,10))+(v.dur?' · '+esc(v.dur):'')+'</div>'
+            +   '<div style="font-size:13.5px;font-weight:600;margin:5px 0 7px;line-height:1.45">'
+            +     '<a href="https://www.youtube.com/watch?v='+esc(v.id)+'" target="_blank" rel="noopener">'
+            +     esc(v.title)+' ↗</a></div>'
+            +   '<div style="font-size:12.5px;color:var(--ink2)">조회 <b style="color:var(--ink)">'+cmp(v.views)
+            +     '</b>회 · 좋아요 '+nf(v.likes)+' · 댓글 '+nf(v.comments)
+            +     ' · <b style="color:var(--ink)">넘어온 사람 '+nf(cl)+'명</b>'
+            +     (v.views?' (조회 대비 '+pct(cl,v.views).toFixed(3)+'%)':'')+'</div>'
+            +   (links.length ? '<div class="mixkey" style="margin-top:8px">' + links.map(l =>
+                    '<span>'+esc(l[1])+' <b>'+nf(l[2])+'</b></span>').join('') + '</div>' : '')
+            +   (v.warn ? '<p class="note" style="margin-top:8px">'+esc(v.warn)+'</p>' : '')
+            + '</div></div></div>'; }).join('');
+  }
+  if (soon.length){
+    h += '<p class="note" style="margin:16px 0 8px"><b>올라올 예정</b></p>'
+      + '<div class="panel scroll"><table><thead><tr><th>채널</th><th>언제</th>'
+      + '<th>붙여 둔 링크</th></tr></thead><tbody>'
+      + soon.map(u => '<tr><td>'+esc(u.ch)+'</td>'
+          + '<td>'+esc(u.at||'')+(u.time?' '+esc(u.time):'')+'</td>'
+          + '<td style="text-align:left">'+(u.links||[]).map(l=>esc(l[1])).join(' · ')+'</td></tr>').join('')
+      + '</tbody></table></div>';
+  }
+  return h + '</div>';
+}
+
 /* ── 짧은 링크(볼라) ──
    어느 경로로 상세페이지에 들어왔는지. 메타 광고 링크는 자릿수가 달라 한 막대에 섞으면
    나머지가 안 보인다 — 그래서 광고와 오가닉을 갈라 놓는다. */
@@ -684,7 +878,7 @@ function select(k){
       '<b>들어온 돈</b>은 판 권수 × 정가 × 65%입니다 — 서점이 가져가는 몫을 뺀, 출판사에 실제로 들어오는 금액입니다. '
     + '인쇄비·인세·광고비는 아직 안 뺐습니다. 자세한 건 맨 아래 <b>말 풀이</b>를 보세요.';
 
-  let h = '';
+  let h = weekBlock(keys, isAll);
 
   if (isAll){
     /* 책별 표 */
@@ -728,6 +922,7 @@ function select(k){
 
     h += adBlock(D.order, true);
     h += ytChannelBlock();
+    h += collabBlock('all');
     h += volaBlock('all');
     h += econBlock();
 
@@ -770,11 +965,101 @@ function select(k){
     h += igBlock(k);
     h += fbBlock(k);
     h += ytBlock(k);
+    h += collabBlock(k);
     h += volaBlock(k);
   }
   h += freshBlock();
   document.getElementById('view').innerHTML = h;
+  layout();
   scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ══ 갈래 나누기 · 접기 · 좌측 탭 ══
+   구획을 만드는 함수들은 자기가 어느 갈래인지 모른다. 그리고 나서 제목으로 묶는다 —
+   그래야 구획을 새로 만들 때 등록하는 걸 잊어도 화면이 깨지지 않는다(「그 밖」으로 떨어진다). */
+const CATS = [
+  {id:'week',    name:'이번 주',      keys:['이번 주 요약','이번 주 잘 나간 광고 소재','이번 주에 올린 콘텐츠']},
+  {id:'sales',   name:'판매',         keys:['책별 현황','날마다 몇 부 팔렸나','어느 서점에서 팔렸나']},
+  {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보문고 등수']},
+  {id:'ad',      name:'광고',         keys:['광고에 얼마 쓰고 몇 명이 봤나','광고가 어디에 나갔나','광고 소재별 성적']},
+  {id:'organic', name:'우리 콘텐츠',  keys:['인스타그램에 올린 것','페이스북에 올린 것','유튜브에 올린 것','유튜브 채널','다른 채널 협업 영상']},
+  {id:'traffic', name:'유입 경로',    keys:['짧은 링크를 몇 번 눌렀나']},
+  {id:'base',    name:'기준 · 자료',  keys:['돈 계산 기준','자료가 언제까지 들어왔나','말 풀이']},
+];
+/* 처음 열어 둘 것 — 한눈에 읽히는 것만 펴 두고, 긴 표·그림 줄은 접어 둔다 */
+const OPEN_BY_DEFAULT = new Set(['이번 주 요약','이번 주 잘 나간 광고 소재','이번 주에 올린 콘텐츠',
+  '책별 현황','날마다 몇 부 팔렸나','어느 서점에서 팔렸나','교보 바로펀딩','교보문고 등수',
+  '광고에 얼마 쓰고 몇 명이 봤나','자료가 언제까지 들어왔나']);
+
+const LS = 'philotic-v2-open';
+const readOpen = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch(e){ return {}; } };
+const saveOpen = o => { try { localStorage.setItem(LS, JSON.stringify(o)); } catch(e){} };
+
+function layout(){
+  const saved = readOpen();
+  const secs = [...document.querySelectorAll('#main .sec')].filter(s => s.querySelector('.sech h2'));
+  const slug = t => t.replace(/[^가-힣A-Za-z0-9]/g,'').slice(0,24);
+
+  secs.forEach(s => {
+    const head = s.querySelector('.sech'), title = head.querySelector('h2').textContent.trim();
+    s.id = 'sec-' + slug(title);
+    s.dataset.title = title;
+    const cat = CATS.find(c => c.keys.includes(title));
+    s.dataset.cat = cat ? cat.id : 'etc';
+
+    /* 제목 줄을 누르는 자리로 바꾸고, 나머지를 본문으로 감싼다 */
+    if (!s.querySelector(':scope > .secb')){
+      const body = document.createElement('div');
+      body.className = 'secb';
+      while (head.nextSibling) body.appendChild(head.nextSibling);
+      s.appendChild(body);
+      head.insertAdjacentHTML('beforeend', '<span class="chev" aria-hidden="true">▼</span>');
+      head.setAttribute('role','button');
+      head.setAttribute('tabindex','0');
+      head.onclick = () => toggle(s);
+      head.onkeydown = e => { if (e.key==='Enter' || e.key===' '){ e.preventDefault(); toggle(s); } };
+    }
+    const open = saved[title] != null ? saved[title] : OPEN_BY_DEFAULT.has(title);
+    setOpen(s, open);
+  });
+
+  /* 좌측 탭 — 지금 화면에 있는 구획만 세운다 */
+  const nav = document.getElementById('sidenav');
+  nav.innerHTML = CATS.map(c => {
+    const mine = secs.filter(s => s.dataset.cat === c.id);
+    if (!mine.length) return '';
+    return '<div class="grp"><b>'+esc(c.name)+'</b>'
+      + mine.map(s => '<a href="#'+s.id+'" data-sec="'+s.id+'">'+esc(s.dataset.title)+'</a>').join('')
+      + '</div>'; }).join('');
+  nav.querySelectorAll('a').forEach(a => a.onclick = e => {
+    e.preventDefault();
+    const s = document.getElementById(a.dataset.sec);
+    if (s.dataset.open === 'false') setOpen(s, true, true);
+    const top = s.getBoundingClientRect().top + scrollY - (innerWidth<=980 ? 152 : 96);
+    scrollTo({top, behavior:'smooth'});
+  });
+  spy(secs);
+}
+function setOpen(s, open, persist){
+  s.dataset.open = String(open);
+  s.querySelector('.sech').setAttribute('aria-expanded', String(open));
+  if (persist){ const o = readOpen(); o[s.dataset.title] = open; saveOpen(o); }
+}
+function toggle(s){ setOpen(s, s.dataset.open === 'false', true); }
+
+/* 스크롤에 따라 좌측 탭에 지금 보는 구획을 표시한다 */
+let spyOff = null;
+function spy(secs){
+  if (spyOff) removeEventListener('scroll', spyOff);
+  const links = [...document.querySelectorAll('#sidenav a')];
+  spyOff = () => {
+    const y = scrollY + (innerWidth<=980 ? 200 : 140);
+    let cur = secs[0];
+    for (const s of secs) if (s.offsetTop <= y) cur = s;
+    links.forEach(a => a.setAttribute('aria-current', String(a.dataset.sec === (cur||{}).id)));
+  };
+  addEventListener('scroll', spyOff, {passive:true});
+  spyOff();
 }
 function kpi(lab, sub, big, unit, foot){
   return '<div class="kpi"><div class="lab">'+esc(lab)+'</div><div class="sub mono">'+esc(sub)+'</div>'
@@ -787,6 +1072,15 @@ document.getElementById('asofAds').textContent   = ADASOF.slice(5).replace('-','
 document.getElementById('footNote').innerHTML =
     '판매는 구글시트 <b>필로틱 출판 판매데이터</b>의 서점 원천 자료, 광고는 메타 광고계정 '
   + esc(D.account) + '의 도서별 실적입니다. 반품이 있는 날은 합계에서 빼고, 막대에는 그리지 않습니다.';
+
+/* 모두 펴기 / 접기 */
+const ab = document.getElementById('allBtn');
+ab.onclick = () => {
+  const secs = [...document.querySelectorAll('#main .sec[data-open]')];
+  const anyClosed = secs.some(s => s.dataset.open === 'false');
+  secs.forEach(s => setOpen(s, anyClosed, true));
+  ab.textContent = anyClosed ? '모두 접기' : '모두 펴기';
+};
 
 /* 테마 */
 const tb = document.getElementById('themeBtn');
