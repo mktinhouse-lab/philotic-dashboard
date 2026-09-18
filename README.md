@@ -51,7 +51,24 @@ python3 tools/set_rank.py dash.html kaljung totalWeeklyCat 9        # '종합 �
 python3 tools/organic.py dash.html ig.json fb.json
 
 # 마지막에 dash.html 을 같은 URL 로 republish
+
+# 새 현황판(v2) 다시 만들기 — 옛 대시보드를 배포한 뒤에 돌린다
+python3 tools/make_v2.py dash.html v2.html
 ```
+
+## 대시보드가 둘이다
+
+| | 주소 | 누가 보나 |
+| --- | --- | --- |
+| 옛 대시보드 (팀장님 제작) | `artifact/EGzqReRqxyLWBAZZiLDjKv` | 팀장님 · 원천 데이터가 여기 있다 |
+| 새 현황판 | `artifact/M1VQ4E5zfZdctNuTzejpqo` | 쉬운 말로 다시 그린 것 |
+
+**옛 대시보드가 원천이다.** 판매·순위·펀딩은 거기에 먼저 넣고, 배포한 뒤,
+`tools/make_v2.py` 로 현황판을 다시 만든다. 현황판만 따로 고치면 다음 갱신에 덮인다.
+현황판의 화면(머리말·본문·자바스크립트)은 `tools/v2/` 에 있다.
+
+정가와 공급률(65%)은 어느 원천에도 없는 계약 조건이라 `tools/make_v2.py` 안에 적혀 있다 —
+바뀌면 거기를 고친다.
 
 세 스크립트 모두 **실패해도 파일을 건드리지 않고 SKIP 하고 끝납니다.** 순위가 하루 비는 것보다
 판매·광고 갱신이 통째로 멈추는 쪽이 나쁘기 때문입니다. 그래서 순서에 상관없이 이어 돌려도 됩니다.
@@ -98,51 +115,68 @@ python3 tools/set_funding.py dash.html pyoryu 4120000
 윈저에 `youtube` 커넥터가 있다(OAuth). 한 번 연결하면 그 뒤로는 자동이다.
 연결 링크: https://onboard.windsor.ai/connect?connector=youtube&next=/youtube/authorize
 
-## 알려진 제약 — 클라우드 세션의 네트워크 정책
+## 어느 환경에서 도는지가 중요하다
 
-Claude Code on the web 세션은 외부 HTTPS 가 조직 정책으로 막혀 있어
-**교보(store·product·event.kyobobook.co.kr) · 유튜브 · 볼라 · 알라딘에 닿지 못합니다**
-(CONNECT 403). MCP 커넥터(구글 드라이브·메타·윈저)만 통합니다.
+같은 대시보드를 고치더라도 **세션이 어느 클라우드 환경에 있느냐**에 따라 되는 일이 다르다.
 
-그래서 클라우드에서는
+| 환경 | 네트워크 | 되는 것 |
+| --- | --- | --- |
+| **필로틱** (`env_01Dh1RCn6iVCQmC8j9vXgBW8`) | Custom · `*.kyobobook.co.kr` 허용 | 교보 순위·펀딩 **자동** |
+| 기본(Default) | Trusted | 판매 시트·메타·인스타·페북만 |
 
-- 판매 시트 → 아티팩트, 메타 광고, 인스타·페북 = **된다**
-- 교보 순위(`ranksPy`) · 유튜브 · 볼라 = **안 된다** — 이전 값이 그대로 남는다
+기본 환경에서는 교보로 나가는 길이 조직 정책에 막혀 있다(`CONNECT 403`). 그래서
+**교보 순위와 펀딩은 `필로틱` 환경의 루틴**(`trig_017i2zrDXyF4Z6PdNGinp2Rv`, 매일 12시 KST)이 맡는다.
+기본 환경 세션에서 급히 순위를 채워야 하면 그 루틴을 즉시 발사(`fire_trigger`)하면 된다 —
+막힌 길을 우회하려 들지 말 것.
 
-2026-09-11 확인 — `store.kyobobook.co.kr` 재시도 2회 모두 `CONNECT 403`.
+`update_trigger` 로는 루틴의 환경을 못 옮긴다. 옮기려면 새로 만들어야 한다.
 
-푸는 방법은 둘입니다.
+### 환경 네트워크 정책을 여는 법 (새 환경을 만들 때)
 
-1. **환경 네트워크 정책 열기** — 이게 진짜 해결이다. 한 번만 하면 된다.
+세션 화면의 **구름 아이콘 → 환경 편집 → Network access → Custom** 을 고르고
+**Allowed domains** 에 아래를 한 줄씩 넣는다. **「Also include default list of
+common package managers」를 반드시 체크**한다 — 안 하면 적어 넣은 것만 남고
+npm·pypi 같은 기본 목록이 통째로 빠진다.
 
-   세션 화면의 **구름 아이콘 → 환경 편집 → Network access → Custom** 을 고르고
-   **Allowed domains** 에 아래를 한 줄씩 넣는다. **「Also include default list of
-   common package managers」를 반드시 체크**한다 — 안 하면 적어 넣은 것만 남고
-   npm·pypi 같은 기본 목록이 통째로 빠진다.
+```
+*.kyobobook.co.kr
+vo.la
+*.youtube.com
+```
 
-   ```
-   *.kyobobook.co.kr
-   vo.la
-   *.youtube.com
-   ```
+접근 수준은 None / Trusted(기본) / Full / Custom 네 가지고, 환경마다 따로 잡는다.
+조직 전체에 밀어 넣는 허용목록은 없다 — 환경을 쓰는 사람이 각자 잡아야 한다.
+문서: https://code.claude.com/docs/en/cloud-environments#network-access
 
-   접근 수준은 None / Trusted(기본) / Full / Custom 네 가지고, 환경마다 따로 잡는다.
-   조직 전체에 밀어 넣는 허용목록은 없다 — 환경을 쓰는 사람이 각자 잡아야 한다.
-   문서: https://code.claude.com/docs/en/cloud-environments#network-access
-
-   **열면 자동이 되는 것** — 교보 순위, 교보 펀딩 (둘 다 로그인 없는 공개 데이터).
-   **열어도 안 되는 것** — 볼라(로그인 필요), 판매 시트(서점 포털 로그인 필요).
-   이 둘은 이전 담당자도 브라우저에서 수기로 받아 넣었다.
-   유튜브는 allowlist 와 무관하다 — MCP 커넥터 트래픽은 앤트로픽 서버를 거치므로
-   윈저 커넥터만 붙이면 된다.
-2. **로컬에서 돌리기** — 이 저장소를 클론한 내 컴퓨터의 Claude Code 세션에서
-   `python3 tools/ranks.py dash.html` 을 돌리고 republish. 로컬은 네트워크 제약이 없습니다.
+**열면 자동이 되는 것** — 교보 순위, 교보 펀딩 (둘 다 로그인 없는 공개 데이터).
+**열어도 안 되는 것** — 볼라(로그인 필요), 판매 시트(서점 포털 로그인 필요).
+이 둘은 이전 담당자도 브라우저에서 수기로 받아 넣었다.
+유튜브는 allowlist 와 무관하다 — MCP 커넥터 트래픽은 앤트로픽 서버를 거치므로
+윈저 커넥터만 붙이면 된다.
 
 `tools/ranks.py` 안의 `API_KEY` 는 교보 공개 베스트셀러 화면이 쓰는 게이트웨이 키입니다.
 교보가 키를 갈면 403 이 나므로, 그때는 `store.kyobobook.co.kr/bestseller/online/daily` 의
 네트워크 탭에서 `x-api-gw-key` 를 새로 복사해 넣어야 합니다 — 스크립트가 그 사유를 찍어 줍니다.
 
 ## 알려진 문제
+
+- **`ranksPy` 블록을 갈아끼울 때는 `</script>` 를 이스케이프해야 한다** (2026-09-18 확인).
+  그 스크립트 소스에는 `'</script>'` 라는 문자열이 들어 있다. 날것으로 넣으면 브라우저가
+  거기서 블록을 닫아 버리고, 뒤에 남은 4천 자가 **화면 아래에 파이썬 코드로 그대로 보인다.**
+  실제로 며칠 그 상태로 배포돼 있었다. 넣을 때 이렇게 한다.
+
+  ```python
+  enc = json.dumps(src, ensure_ascii=False).replace('</script', r'<\/script')
+  ```
+
+  JSON 의 `\/` 는 `/` 로 되읽히므로 값은 그대로다. 넣은 뒤 **브라우저로 한 번 열어**
+  `document.body` 직속에 긴 텍스트 노드가 없는지 확인하는 게 확실하다.
+
+- **'교보 순위 수집 실패' 는 네트워크 탓이 아닐 수 있다** (2026-09-18 해결).
+  사유가 `Expecting value: line 1 column 1 (char 0)` 이면 **응답이 gzip 인데 안 풀린 것**이다.
+  교보 게이트웨이는 `Accept-Encoding` 을 안 보내도 압축해 답할 때가 있다. 지금은
+  `tools/ranks.py` 가 헤더와 바이트 첫머리(`1f 8b`)를 둘 다 보고 풀어 주고, JSON 이 아니면
+  어느 면·HTTP 몇·앞 160자를 사유에 적는다. 사유를 먼저 읽고 판단할 것.
 
 - **자동 갱신 루틴이 우서전지 탭을 빠뜨린다** (2026-09-16 확인). 09-10~09-15 엿새치
   166부가 대시보드에 한 줄도 안 들어와 있었다. 다른 네 권은 같은 기간 정상이었다.
