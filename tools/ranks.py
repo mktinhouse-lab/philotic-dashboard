@@ -12,7 +12,7 @@
 hist(순위 추이)는 교보가 과거를 안 주므로 우리가 매일 쌓는다.
 날짜 키는 '수집한 날'이 아니라 '집계 기준일'(온라인 일간의 ymw)이다 — 화면에서 "8/23 몇 위"로 읽히려면 그래야 한다.
 """
-import sys, json, re, urllib.request, urllib.parse, datetime
+import sys, json, re, gzip, zlib, urllib.request, urllib.parse, datetime
 
 API_KEY = ('eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..SAuG7hzFxwWfewcz.gMw0bGwwgB9Xx8Wxz-Y6ihk4IMgSa-5CM-'
            'ZzIdfRNQbqMbvLUmv5-9sRubZjE-iJ-wNPlNbpFnHprd3aMGDrJGqCkUNz3AkvR24a6S18-9PUCOySLlK296YlQwyHKRLDprH1Atq8'
@@ -45,9 +45,27 @@ OPEN = '<script id="kyoboRanks" type="application/json">'
 
 
 def get(url, headers, timeout=25):
-    req = urllib.request.Request(url, headers=headers)
+    """응답을 글자로 돌려준다 — 압축돼 오더라도.
+
+    교보 게이트웨이는 Accept-Encoding 을 안 보내도 gzip 으로 답할 때가 있다. 그러면
+    raw 바이트를 그대로 decode 하게 되고, json.loads 가 'Expecting value: line 1 column 1'
+    로 죽는다. 원인이 순위 없음도 키 만료도 아닌데 그렇게 보여서 며칠을 헤맸다.
+    그래서 압축 여부를 헤더가 아니라 **바이트의 첫머리**로도 판단한다 — 헤더가 빠져 오는
+    경우가 실제로 있었기 때문이다.
+    """
+    req = urllib.request.Request(url, headers=dict(headers, **{'accept-encoding': 'gzip, deflate'}))
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.status, r.read().decode('utf-8', 'replace')
+        raw = r.read()
+        enc = (r.headers.get('content-encoding') or '').lower()
+        status = r.status
+    if enc == 'gzip' or raw[:2] == b'\x1f\x8b':
+        raw = gzip.decompress(raw)
+    elif enc == 'deflate':
+        try:
+            raw = zlib.decompress(raw)
+        except zlib.error:
+            raw = zlib.decompress(raw, -zlib.MAX_WBITS)
+    return status, raw.decode('utf-8', 'replace')
 
 
 def page(ep, q, p):
@@ -61,7 +79,12 @@ def page(ep, q, p):
                                'store.kyobobook.co.kr/bestseller/online/daily 의 네트워크 탭에서 '
                                'x-api-gw-key 를 새로 복사해 넣어야 합니다.')
         raise RuntimeError('%s HTTP %s' % (ep, e.code))
-    d = (json.loads(body) or {}).get('data') or {}
+    try:
+        d = (json.loads(body) or {}).get('data') or {}
+    except ValueError:
+        # 무엇이 왔는지 적어 둔다. '파싱 실패' 만 남으면 압축인지 오류 페이지인지 알 수 없다.
+        raise RuntimeError('%s 응답이 JSON 이 아닙니다 (HTTP %s) — 앞부분: %r'
+                           % (ep, st, body[:160]))
     return d.get('bestSeller') or [], d.get('ymw')
 
 
