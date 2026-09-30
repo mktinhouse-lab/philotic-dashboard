@@ -266,8 +266,32 @@ function rankBlock(k){
 }
 
 /* ── 펀딩 ── */
+/* 끝난 펀딩 — 진행 막대는 의미가 없어지지만 **결과는 기록이다**.
+   done 이면 통째로 숨기고 있었는데, 그러면 "얼마나 모았더라"를 아무 데서도 못 본다. */
+function fundDoneBlock(k, p){
+  const dd = (a,b) => Math.round((Date.parse(b+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'))/86400000);
+  const days = dd(p.from,p.to)+1;
+  const units = p.unitPrice ? Math.round(p.raised/p.unitPrice) : null;
+  const tiers = (p.tiers||[]).slice().sort((a,b)=>a[0]-b[0]);
+  const hit = tiers.filter(t => p.raised >= t[0]);
+  return '<div class="sec">' + sech('교보 바로펀딩 — 끝났습니다',
+      md(p.from)+'~'+md(p.to)+' · '+days+'일 진행 · 최종 결과')
+    + '<div class="tiles">'
+    + tile('최종 모금액', won(p.raised), '목표 '+won(p.goal)+' 대비 <b>'+nf(p.pct)+'%</b>')
+    + (units!=null ? tile('예약된 책', nf(units)+'부', '한 권 '+nf(p.unitPrice)+'원 기준') : '')
+    + tile('하루 평균', won(p.raised/days), days+'일 동안')
+    + (hit.length ? tile('넘긴 적립 단계', hit.length+'단계',
+         '마지막 '+won(hit[hit.length-1][0])+' → '+hit[hit.length-1][1]) : '')
+    + '</div>'
+    + '<p class="note"><b>예약된 책은 판매로 따로 잡힙니다.</b> 펀딩 기간에 예약한 사람들의 책이 '
+    + '언제 출고로 기록되는지는 교보 정산 일정을 따르므로, 위 부수와 아래 판매 그래프의 날짜는 '
+    + '서로 어긋날 수 있습니다.</p>'
+    + (p.url ? '<p class="note"><a href="'+esc(p.url)+'" target="_blank" rel="noopener">펀딩 페이지 ↗</a></p>' : '')
+    + '</div>';
+}
 function fundBlock(k){
-  const p = (D.funding.projects||{})[k]; if (!p || p.done) return '';
+  const p = (D.funding.projects||{})[k]; if (!p) return '';
+  if (p.done) return fundDoneBlock(k, p);
   const today = ASOF;
   const dd = (a,b) => Math.round((Date.parse(b+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'))/86400000);
   const total = dd(p.from,p.to)+1, spent = Math.max(1, dd(p.from,today)+1);
@@ -786,6 +810,28 @@ function collabBlock(k){
   return h + '</div>';
 }
 
+/* ── 그날 무슨 일이 있었나 ──
+   판매 시트의 메모 칸이다. 출간일·푸시·진열 같은 게 적혀 있는데 화면 어디에도 안 나왔다.
+   그래서 "9/29 에 갑자기 267부"를 보고도 왜인지 알 수가 없었다. 그날 판매량을 옆에 붙인다. */
+function eventBlock(k){
+  const b = D.books[k];
+  const rows = (b.sales||[]).filter(r => r[7]).slice().reverse();
+  if (!rows.length) return '';
+  const pub = b.pub;
+  const dd = (a,z) => Math.round((Date.parse(z+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'))/86400000);
+  return '<div class="sec">' + sech('그날 무슨 일이 있었나',
+      '판매 시트에 적어 둔 메모 · 최근 순 · 출간 '+esc(String(pub).replace(/-/g,'.')))
+    + '<div class="panel scroll"><table><thead><tr><th>날짜</th><th>출간 기준</th>'
+    + '<th>그날 판매</th><th>한 일</th></tr></thead><tbody>'
+    + rows.map(r => {
+        const n = pub ? dd(pub, r[0]) : null;
+        return '<tr><td>'+esc(r[0].slice(2).replace(/-/g,'.'))+'</td>'
+          + '<td class="muted">'+(n==null?'—':(n===0?'출간일':(n>0?'D+'+n:'D'+n)))+'</td>'
+          + '<td class="big">'+nf(sold(r))+'부</td>'
+          + '<td style="text-align:left">'+esc(r[7])+'</td></tr>'; }).join('')
+    + '</tbody></table></div></div>';
+}
+
 /* ── 짧은 링크(볼라) ──
    어느 경로로 상세페이지에 들어왔는지. 메타 광고 링크는 자릿수가 달라 한 막대에 섞으면
    나머지가 안 보인다 — 그래서 광고와 오가닉을 갈라 놓는다. */
@@ -1037,6 +1083,7 @@ function select(k){
 
     h += fundBlock(k);
     h += rankBlock(k);
+    h += eventBlock(k);
     h += adBlock([k], false);
 
     /* 광고 소재 */
@@ -1068,8 +1115,8 @@ function select(k){
    그래야 구획을 새로 만들 때 등록하는 걸 잊어도 화면이 깨지지 않는다(「그 밖」으로 떨어진다). */
 const CATS = [
   {id:'week',    name:'이번 주',      keys:['이번 주 요약','이번 주 잘 나간 광고 소재','이번 주에 올린 콘텐츠']},
-  {id:'sales',   name:'판매',         keys:['책별 현황','날마다 몇 부 팔렸나','어느 서점에서 팔렸나']},
-  {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보문고 등수']},
+  {id:'sales',   name:'판매',         keys:['책별 현황','날마다 몇 부 팔렸나','어느 서점에서 팔렸나','그날 무슨 일이 있었나']},
+  {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보 바로펀딩 — 끝났습니다','교보문고 등수']},
   {id:'ad',      name:'광고',         keys:['광고에 얼마 쓰고 몇 명이 봤나','광고가 어디에 나갔나','광고 소재별 성적']},
   {id:'organic', name:'우리 콘텐츠',  keys:['인스타그램에 올린 것','페이스북에 올린 것','유튜브에 올린 것','유튜브 채널']},
   {id:'collab',  name:'협업',          keys:['나간 영상','올라올 예정']},
@@ -1078,7 +1125,8 @@ const CATS = [
 ];
 /* 처음 열어 둘 것 — 한눈에 읽히는 것만 펴 두고, 긴 표·그림 줄은 접어 둔다 */
 const OPEN_BY_DEFAULT = new Set(['이번 주 요약','이번 주 잘 나간 광고 소재','이번 주에 올린 콘텐츠',
-  '책별 현황','날마다 몇 부 팔렸나','어느 서점에서 팔렸나','교보 바로펀딩','교보문고 등수',
+  '책별 현황','날마다 몇 부 팔렸나','어느 서점에서 팔렸나',
+  '교보 바로펀딩','교보 바로펀딩 — 끝났습니다','교보문고 등수','그날 무슨 일이 있었나',
   '광고에 얼마 쓰고 몇 명이 봤나','자료가 언제까지 들어왔나',
   '나간 영상','올라올 예정']);
 
