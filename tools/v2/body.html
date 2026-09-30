@@ -144,7 +144,8 @@ const delta = (cur, prev) => {
 let CUR = 'all';
 const tabs = document.getElementById('tabs');
 const HAS_COLLAB = !!(D.ytCollab && ((D.ytCollab.videos||[]).length || (D.ytCollab.upcoming||[]).length));
-tabs.innerHTML = '<button role="tab" data-k="all" style="--bc:var(--accent)">전체</button>'
+tabs.innerHTML = '<button role="tab" data-k="sum" style="--bc:var(--accent)">요약</button>'
+  + '<button role="tab" data-k="all" style="--bc:var(--ink2)">전체</button>'
   + D.order.map(k => '<button role="tab" data-k="'+k+'" style="--bc:'+BC[k]+'"><i></i>'
       + esc(D.books[k].short) + '</button>').join('')
   /* 협업은 남의 채널 성적이다. 도서 탭 안에 두면 우리 지표에 섞여 읽히므로 탭을 따로 판다. */
@@ -422,6 +423,33 @@ function freshBlock(){
              + '<span>'+esc(r.d.slice(5).replace('-','/'))+' · '+word
              + (r.n==='교보 등수' && fail ? ' · '+fail : '')+'</span></div>'; }).join('')
     + '</div></div>';
+}
+
+/* ══ 남는 돈 ══
+   「들어온 돈」은 매출이다. 인쇄비·인세·광고비를 빼야 이익인데 화면에 없었다.
+   제작원가와 인세는 판매 시트에 없어서 econ 이 정가 대비 비율로 시나리오만 두고 있다.
+   그 가운데값으로 계산하고, **추정이라는 걸 숨기지 않는다.** */
+const VC = (() => {
+  const a = ((D.econ||{}).varCost) || [0.25];
+  return {lo: Math.min(...a), hi: Math.max(...a), mid: a.reduce((x,y)=>x+y,0)/a.length};
+})();
+/* 한 책의 기간 이익. units 부 팔고 spend 원 썼을 때. */
+function profit(k, units, spend, rate){
+  const price = D.list[k] || 0;
+  const rev  = units * price * D.supplyRate;
+  const cost = units * price * (rate != null ? rate : VC.mid);
+  return {rev, cost, ad: spend, net: rev - cost - spend};
+}
+function profitAll(keys, from){
+  let rev=0, cost=0, ad=0, lo=0, hi=0;
+  keys.forEach(k => {
+    const a = agg(k, from);
+    const p = profit(k, a.units, a.spend);
+    rev+=p.rev; cost+=p.cost; ad+=p.ad;
+    lo += profit(k, a.units, a.spend, VC.hi).net;
+    hi += profit(k, a.units, a.spend, VC.lo).net;
+  });
+  return {rev, cost, ad, net: rev-cost-ad, lo, hi};
 }
 
 /* ══ 이번 주 ══
@@ -1126,10 +1154,223 @@ function selectCollab(){
   scrollTo({top:0, behavior:'smooth'});
 }
 
+/* ══ 할 일 ══
+   숫자를 다 보여줘도 "그래서 뭘 하냐"는 사람이 판단해야 했다. 규칙으로 뽑을 수 있는 것은
+   화면이 먼저 말한다. 규칙은 단순하게 — 틀렸을 때 사람이 알아볼 수 있어야 한다. */
+function todoBlock(keys){
+  const out = [];
+  const AW = D.adsWeek;
+  if (AW && AW.books){
+    let rows = [];
+    keys.forEach(x => (AW.books[x]||[]).forEach(a => rows.push([x].concat(a))));
+    rows = rows.filter(r => r[2] >= 30000);              /* 3만원 미만은 손댈 가치가 없다 */
+    if (rows.length >= 3){
+      const cpcs = rows.filter(r=>r[7]).map(r=>r[7]).sort((a,b)=>a-b);
+      const mid = cpcs[Math.floor(cpcs.length/2)];
+      rows.slice().sort((a,b)=>b[7]-a[7]).slice(0,2).forEach(r => {
+        if (r[7] >= mid*2) out.push({t:'끄기', c:'bad',
+          h: esc(D.books[r[0]].short)+' 「'+esc(r[1])+'」',
+          d: '클릭 한 번에 '+nf(r[7])+'원 — 중간값('+nf(mid)+'원)의 '+(r[7]/mid).toFixed(1)+'배. '
+           + '이번 주 '+won(r[2])+' 썼습니다.'});
+      });
+      const best = rows.filter(r=>r[7]).sort((a,b)=>a[7]-b[7])[0];
+      if (best && best[7] <= mid*0.6) out.push({t:'밀기', c:'good',
+        h: esc(D.books[best[0]].short)+' 「'+esc(best[1])+'」',
+        d: '클릭 한 번에 '+nf(best[7])+'원 · 본 사람 중 '+(+best[6]).toFixed(1)+'%가 누름 — '
+         + '가장 싸게 데려오는 소재입니다.'});
+    }
+  }
+  /* 링크가 없어 성과를 못 세는 채널 */
+  keys.forEach(k => {
+    const b = D.books[k], ig = b.igPosts||[];
+    [['B', ig.filter(p=>p[1]==='B').length], ['P', ig.filter(p=>p[1]==='P').length],
+     ['F', (b.fbPosts||[]).length], ['Y', (YT&&YT.books&&YT.books[k]?YT.books[k].n:0)]]
+      .forEach(([ch,n]) => {
+        if (n >= 3 && !chanLink(k, ch)) out.push({t:'링크', c:'warn',
+          h: esc(b.short)+' · '+({B:IGACC.B,P:IGACC.P,F:META.fbPage,Y:'유튜브'}[ch]||ch),
+          d: n+'건을 올렸는데 단축링크가 없어 <b>몇 명이 넘어왔는지 못 셉니다</b>. 링크를 걸어야 세입니다.'});
+      });
+  });
+  /* 링크는 있는데 거의 안 눌리는 채널 — 링크가 안 걸려 있을 가능성 */
+  keys.forEach(k => {
+    const b = D.books[k], ig = b.igPosts||[];
+    [['B', sum(ig.filter(p=>p[1]==='B').map(p=>p[3]))], ['P', sum(ig.filter(p=>p[1]==='P').map(p=>p[3]))]]
+      .forEach(([ch,v]) => {
+        const cl = chanLink(k, ch);
+        if (cl && v >= 100000 && cl.tot <= 5) out.push({t:'점검', c:'warn',
+          h: esc(b.short)+' · '+(IGACC[ch]||ch),
+          d: '조회 '+cmp(v)+'회인데 링크 클릭이 '+nf(cl.tot)+'회뿐입니다 — '
+           + '프로필에 <b>vo.la/'+esc(cl.slug)+'</b> 가 안 걸려 있을 수 있습니다.'});
+      });
+  });
+  /* 자료가 밀린 원천 */
+  const today = [META.lastAuto, ADASOF, ASOF].filter(Boolean).sort().pop();
+  [['볼라 링크 클릭', VL?VL.to:null, '로그인해야 통계가 보여 사람이 받아 넣어야 합니다'],
+   ['유튜브', YT?YT.through:null, '유튜브 애널리틱스 집계가 늦습니다']]
+    .forEach(([n,d,why]) => {
+      if (!d) return;
+      const lag = dayGap(d, today);
+      if (lag >= 7) out.push({t:'자료', c:'warn', h:n+' '+lag+'일 밀림',
+        d: esc(d)+' 이후가 비어 있습니다 — '+why+'.'});
+    });
+
+  if (!out.length) return '';
+  return '<div class="sec">' + sech('할 일',
+      '규칙으로 자동으로 뽑은 것입니다 — 판단은 사람이 합니다')
+    + '<div class="todos">' + out.slice(0,6).map(o =>
+        '<div class="todo '+o.c+'"><span class="tg">'+esc(o.t)+'</span>'
+        + '<div><b>'+o.h+'</b><p>'+o.d+'</p></div></div>').join('')
+    + '</div></div>';
+}
+
+/* ══ 교보 순위 추이 ══ 지금 몇 위인지만 있고 올라가는 중인지 내려가는 중인지가 없었다 */
+function rankTrendBlock(k){
+  const H = D.rankHist; if (!H) return '';
+  const days = Object.keys(H).sort().slice(-28);
+  const pick = sf => days.map(d => ((H[d]||{})[k]||{})[sf]);
+  const lines = [{sf:'onlineDaily', name:'인터넷 교보 일간', c:'var(--accent)'},
+                 {sf:'totalWeeklyCat', name:'분야 주간', c:'var(--good)'}]
+    .map(l => Object.assign(l, {vals: pick(l.sf)}))
+    .filter(l => l.vals.filter(v=>v!=null).length >= 3);
+  if (!lines.length) return '';
+
+  const W=1080, H2=200, PL=44, PR=14, PT=16, PB=28;
+  const iw=W-PL-PR, ih=H2-PT-PB, n=days.length;
+  const all = lines.flatMap(l=>l.vals).filter(v=>v!=null);
+  const worst = Math.max(...all), best = Math.min(...all);
+  const span = Math.max(1, worst-best);
+  const y = v => PT + (v-best)/span*ih;                 /* 1위가 위로 가게 뒤집는다 */
+  const x = i => PL + (n<=1?0:i/(n-1)*iw);
+  let g='';
+  for (let t=0;t<=3;t++){
+    const v = best + span/3*t;
+    g += '<line x1="'+PL+'" y1="'+y(v).toFixed(1)+'" x2="'+(W-PR)+'" y2="'+y(v).toFixed(1)
+       + '" stroke="var(--rule2)"/><text x="'+(PL-7)+'" y="'+(y(v)+4).toFixed(1)
+       + '" text-anchor="end" font-size="10.5" fill="var(--ink3)" '
+       + 'font-family="IBM Plex Mono,monospace">'+nf(v)+'위</text>';
+  }
+  const paths = lines.map(l => {
+    let d='', pts='';
+    l.vals.forEach((v,i) => {
+      if (v==null) { d=''; return; }
+      d += (d?' L':'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1);
+      pts += '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="2.6" fill="'+l.c+'">'
+           + '<title>'+esc(days[i])+' · '+esc(l.name)+' '+nf(v)+'위</title></circle>';
+    });
+    const last = l.vals.map((v,i)=>[v,i]).filter(([v])=>v!=null).pop();
+    const lab = last ? '<text x="'+x(last[1]).toFixed(1)+'" y="'+(y(last[0])-9).toFixed(1)
+      + '" text-anchor="end" font-size="11" font-weight="700" fill="'+l.c+'" '
+      + 'font-family="IBM Plex Mono,monospace">'+nf(last[0])+'위</text>' : '';
+    return '<path d="'+d+'" fill="none" stroke="'+l.c+'" stroke-width="2.2" stroke-linejoin="round"/>'+pts+lab;
+  }).join('');
+  const every = Math.max(1, Math.ceil(n/9));
+  const xl = days.map((d,i)=> i%every ? '' :
+    '<text x="'+x(i).toFixed(1)+'" y="'+(H2-9)+'" text-anchor="middle" font-size="10.5" '
+    + 'fill="var(--ink3)" font-family="IBM Plex Mono,monospace">'+esc(md(d))+'</text>').join('');
+
+  return '<div class="sec">' + sech('순위 추이', '최근 '+n+'일 · <b>위로 갈수록 좋은 것</b>입니다')
+    + '<div class="chart"><div class="legend">'
+    + lines.map(l=>'<span><i style="background:'+l.c+'"></i>'+esc(l.name)+'</span>').join('')
+    + '</div><svg viewBox="0 0 '+W+' '+H2+'" role="img">'+g+paths+xl+'</svg></div></div>';
+}
+
+/* ══ 출간 후 같은 일수 비교 ══
+   1,079부가 좋은 숫자인지 나쁜 숫자인지는 혼자서는 알 수 없다. 우리 책끼리 견줘야 안다.
+   2026년 목표치가 시트에 없어서, 목표 대신 **우리 역대 출간 성적**을 기준선으로 쓴다. */
+function launchBlock(){
+  const MARKS = [7, 14, 30, 60];
+  const rows = D.order.map(k => {
+    const b = D.books[k], pub = b.pub;
+    if (!pub) return null;
+    const dd = z => Math.round((Date.parse(z+'T00:00:00Z')-Date.parse(pub+'T00:00:00Z'))/86400000);
+    let acc = 0; const cum = {};
+    b.sales.forEach(r => { const n = dd(r[0]); if (n < 0) return; acc += sold(r); cum[n] = acc; });
+    const ns = Object.keys(cum).map(Number).sort((a,b2)=>a-b2);
+    if (!ns.length) return null;
+    const at = m => { const ok = ns.filter(x=>x<=m); return ok.length ? cum[ok[ok.length-1]] : null; };
+    const cur = ns[ns.length-1];
+    return {k, short:b.short, pub, cur, total:acc, marks: MARKS.map(m => cur >= m ? at(m) : null)};
+  }).filter(Boolean).sort((a,b)=>b.total-a.total);
+  if (rows.length < 2) return '';
+  const mx = MARKS.map((_,i) => Math.max(...rows.map(r => r.marks[i]||0), 1));
+
+  return '<div class="sec">' + sech('출간 후 같은 일수 비교',
+      '새 책이 잘 나가는지 <b>우리 역대 책과 같은 시점으로</b> 견줍니다 · 아직 안 지난 칸은 비어 있습니다')
+    + '<div class="panel scroll"><table><thead><tr><th>책</th><th>출간</th>'
+    + MARKS.map(m=>'<th>D+'+m+'<span class="t2">누적</span></th>').join('')
+    + '<th>지금<span class="t2">누적</span></th></tr></thead><tbody>'
+    + rows.map(r => '<tr><td><div class="bk" style="--bc:'+BC[r.k]+'"><i></i><span>'+esc(r.short)
+        + '<small>D+'+r.cur+'</small></span></div></td>'
+        + '<td class="muted">'+esc(r.pub.slice(2).replace(/-/g,'.'))+'</td>'
+        + r.marks.map((v,i) => v==null
+            ? '<td class="muted">—</td>'
+            : '<td><div class="cellbar"><b style="width:'+(v/mx[i]*100).toFixed(1)
+              + '%;background:'+BC[r.k]+'"></b><span>'+nf(v)+'</span></div></td>').join('')
+        + '<td class="big">'+nf(r.total)+'</td></tr>').join('')
+    + '</tbody></table></div></div>';
+}
+
+/* ══ 요약 탭 — 대표님용 한 장 ══
+   스크롤 없이 한 화면에서 끝나야 한다. 돈과 목표만 남기고 과정은 다른 탭으로 보낸다. */
+function selectSummary(){
+  const keys = D.order;
+  const m = profitAll(keys, MONTH+'-01');
+  const all = profitAll(keys);
+  const w7 = keys.map(last7).reduce((a,b)=>({cur:a.cur+b.cur, prev:a.prev+b.prev}), {cur:0,prev:0});
+  const units = keys.reduce((a,k)=>a+agg(k, MONTH+'-01').units, 0);
+  const COV = (D.covers||{}).img || {};
+
+  document.getElementById('kpis').innerHTML =
+      kpi('이번 달 남는 돈', 'NET ' + MONTH.replace('-','.'), won(m.net), '',
+          '매출 '+won(m.rev)+' − 원가 '+won(m.cost)+' − 광고 '+won(m.ad))
+    + kpi('이번 달 판매', 'UNITS', nf(units), '부',
+          '최근 7일 '+nf(w7.cur)+'부 ' + delta(w7.cur, w7.prev))
+    + kpi('이번 달 광고비', 'AD SPEND', won(m.ad), '',
+          units ? '한 권 팔려고 '+nf(m.ad/units)+'원' : '판매 없음')
+    + kpi('전 기간 누적', 'TOTAL', won(all.net), '',
+          nf(keys.reduce((a,k)=>a+agg(k).units,0))+'부 · 매출 '+won(all.rev));
+
+  document.getElementById('kpiNote').innerHTML =
+      '<b>남는 돈은 추정입니다.</b> 제작원가와 인세가 판매 시트에 없어 정가의 '
+    + Math.round(VC.mid*100)+'%로 잡았습니다 (범위 '+Math.round(VC.lo*100)+'~'+Math.round(VC.hi*100)+'%). '
+    + '이번 달로 치면 <b>'+won(m.lo)+' ~ '+won(m.hi)+'</b> 사이입니다. 실제 인쇄비·인세를 주시면 정확해집니다.';
+
+  let h = '<div class="sec">' + sech('책별 한 줄', '이번 달 · 남는 돈 순')
+    + '<div class="bookcards">'
+    + keys.map(k => {
+        const a = agg(k), mm = agg(k, MONTH+'-01');
+        const pm = profit(k, mm.units, mm.spend), pa = profit(k, a.units, a.spend);
+        const R = D.ranks[k], r = R ? (R.ranks||{}).onlineDaily : null;
+        return {k, a, mm, pm, pa, r};
+      }).sort((x,y)=>y.pm.net-x.pm.net).map(o => {
+        const b = D.books[o.k];
+        return '<div class="bcard" style="--bc:'+BC[o.k]+'">'
+          + (COV[o.k] ? '<img class="cov" src="'+COV[o.k]+'" alt="'+esc(b.short)+' 표지" loading="lazy">'
+                      : '<div class="cov none">'+esc(b.short)+'</div>')
+          + '<div class="bmain"><b>'+esc(b.title||b.short)+'</b>'
+          +   '<span class="muted">출간 '+esc(String(b.pub).slice(2).replace(/-/g,'.'))
+          +   (o.r && o.r.rank ? ' · 교보 일간 <b>'+nf(o.r.rank)+'위</b>' : '')+'</span>'
+          +   '<div class="brow">'
+          +     '<span><i>이번 달</i><b>'+nf(o.mm.units)+'부</b></span>'
+          +     '<span><i>남는 돈</i><b class="'+(o.pm.net>=0?'up':'down')+'">'+won(o.pm.net)+'</b></span>'
+          +     '<span><i>누적</i><b>'+nf(o.a.units)+'부</b></span>'
+          +     '<span><i>누적 남는 돈</i><b>'+won(o.pa.net)+'</b></span>'
+          +   '</div></div></div>'; }).join('')
+    + '</div></div>';
+
+  h += todoBlock(keys);
+  h += launchBlock();
+  h += freshBlock();
+  document.getElementById('view').innerHTML = h;
+  layout();
+  scrollTo({top:0, behavior:'smooth'});
+}
+
 /* ── 그리기 ── */
 function select(k){
   CUR = k;
   tabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.k===k)));
+  if (k === 'sum'){ selectSummary(); return; }
   if (k === 'collab'){ selectCollab(); return; }
   const isAll = k === 'all';
   const keys = isAll ? D.order : [k];
@@ -1158,7 +1399,7 @@ function select(k){
       '<b>들어온 돈</b>은 판 권수 × 정가 × 65%입니다 — 서점이 가져가는 몫을 뺀, 출판사에 실제로 들어오는 금액입니다. '
     + '인쇄비·인세·광고비는 아직 안 뺐습니다. 자세한 건 맨 아래 <b>말 풀이</b>를 보세요.';
 
-  let h = weekBlock(keys, isAll);
+  let h = (isAll ? todoBlock(keys) : '') + weekBlock(keys, isAll);
 
   if (isAll){
     /* 책별 표 */
@@ -1226,6 +1467,7 @@ function select(k){
 
     h += fundBlock(k);
     h += rankBlock(k);
+    h += rankTrendBlock(k);
     h += eventBlock(k);
     h += adBlock([k], false);
 
@@ -1260,8 +1502,9 @@ function select(k){
    그래야 구획을 새로 만들 때 등록하는 걸 잊어도 화면이 깨지지 않는다(「그 밖」으로 떨어진다). */
 const CATS = [
   {id:'week',    name:'이번 주',      keys:['이번 주 요약','이번 주 광고 소재','이번 주 콘텐츠']},
+  {id:'top',     name:'한눈에',        keys:['책별 한 줄','할 일','출간 후 같은 일수 비교']},
   {id:'sales',   name:'판매',         keys:['책별 현황','일별 판매','서점별 판매','마케팅 일지']},
-  {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수']},
+  {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수','순위 추이']},
   {id:'ad',      name:'광고',         keys:['광고 집행','광고 나간 곳','광고 소재별 성적']},
   {id:'organic', name:'우리 콘텐츠',  keys:['채널별 유입','유튜브 채널'],
    match:t => / — (인스타그램|페이스북|유튜브)$/.test(t)},
@@ -1272,7 +1515,8 @@ const CATS = [
 /* 처음 열어 둘 것 — 한눈에 읽히는 것만 펴 두고, 긴 표·그림 줄은 접어 둔다 */
 const OPEN_BY_DEFAULT = new Set(['이번 주 요약','이번 주 광고 소재','이번 주 콘텐츠',
   '책별 현황','일별 판매','서점별 판매',
-  '교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수','마케팅 일지',
+  '교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수','마케팅 일지','순위 추이',
+  '책별 한 줄','할 일','출간 후 같은 일수 비교',
   '광고 집행','데이터 현황',
   '협업 영상','업로드 예정','채널별 유입']);
 
@@ -1376,5 +1620,5 @@ tb.onclick = () => { const d = !isDark();
   document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
   tb.textContent = d ? '라이트 모드' : '다크 모드'; };
 
-select('all');
+select('sum');
 </script>

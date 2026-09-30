@@ -31,8 +31,9 @@ BOOK_KEYS = ('title', 'short', 'pub', 'hasYp', 'sales', 'daily', 'monthly', 'ads
 #   adsWeek — 최근 7일 소재별 광고 성적. 옛 대시보드는 이 블록을 안 그리지만,
 #             거기 얹어 두면 다시 만들 때마다 따라온다 (tools/set_ads_week.py 로 넣는다)
 #   ytCollab— 다른 채널과 한 협업·협찬 영상 (썸네일 포함). 다른 세션이 채워 넣는다.
+#   covers  — 책 표지 (base64). 아티팩트는 외부 이미지를 막으므로 심어야 뜬다.
 WHOLE = ('econ', 'volaDaily', 'ytData', 'igExtra', 'igFollow', 'adThumb', 'thumbs',
-         'adsWeek', 'ytCollab')
+         'adsWeek', 'ytCollab', 'covers')
 
 # 정가와 공급률은 어느 원천에도 없다 — 계약 조건이라 사람이 적어 두는 값이다.
 # 바뀌면 여기를 고친다. 화면의 「예상 정산액」이 이 둘로 계산된다.
@@ -83,6 +84,7 @@ def build_data(html):
         'ranks': KR['books'],
         'rankAsOf': KR.get('asOf'),
         'rankLastTry': KR.get('lastTry'),
+        'rankHist': KR.get('hist'),
         'rankSurfaces': {s['key']: s['label'] for s in KR.get('surfaces') or []},
         'funding': FD,
         # 원천마다 들어오는 속도가 달라서 '기준일' 하나로는 무엇이 밀렸는지 알 수 없다.
