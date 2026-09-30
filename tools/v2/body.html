@@ -165,7 +165,7 @@ function spark(vals, color, w, h){
 /* ── 누적 막대 차트 (+ 선 겹치기) ── */
 function stackChart(labels, series, opts){
   opts = opts || {};
-  const W=1080, H=opts.h||230, PL=52, PR=opts.line?54:14, PT=14, PB=30;
+  const W=1080, H=opts.h||230, PL=52, PR=opts.line?54:14, PT=opts.values===false?14:22, PB=30;
   const iw = W-PL-PR, ih = H-PT-PB, n = labels.length || 1;
   const tot = labels.map((_,i) => series.reduce((a,s)=>a+(s.vals[i]||0),0));
   const mx = Math.max(...tot, 1);
@@ -190,6 +190,24 @@ function stackChart(labels, series, opts){
            + esc(labels[i])+' · '+esc(s.name)+' '+nf(v)+'</title></rect>';
     });
   });
+  /* 막대 위 숫자 — 그래프를 보고 "그래서 몇 부냐"를 눈으로 세지 않게 한다.
+     칸이 좁으면 글자가 겹치므로 폭이 버틸 때만 적고, 0 인 날은 적지 않는다. */
+  let vals = '';
+  if (opts.values !== false && step >= 17){
+    const fs = step >= 30 ? 10.5 : step >= 23 ? 9.5 : 8.5;
+    /* 자릿수가 크면 그대로 적을 자리가 없다. 380,524 는 여섯 칸이지만 38만 은 세 칸이다.
+       칸에 안 들어가는 숫자를 억지로 적으면 서로 겹쳐 아무것도 못 읽는다. */
+    const fmt = opts.valueFmt || (mx >= 10000 ? (v => (v/10000).toFixed(v<100000?1:0)+'만') : nf);
+    labels.forEach((_,i) => {
+      const v = tot[i]; if (!v) return;
+      const t = fmt(v);
+      if (t.length * fs * 0.62 > step + 6) return;      /* 그래도 안 들어가면 그 칸은 비운다 */
+      const y = PT + ih - ih*(v/mx) - 5;
+      vals += '<text x="'+(PL+step*i+step/2).toFixed(1)+'" y="'+y.toFixed(1)+'" text-anchor="middle" '
+           + 'font-size="'+fs+'" font-weight="600" fill="var(--ink2)" '
+           + 'font-family="IBM Plex Mono,monospace">'+esc(t)+'</text>';
+    });
+  }
   /* 날짜 라벨은 겹치지 않을 만큼만 */
   const every = Math.max(1, Math.ceil(n/12));
   const xl = labels.map((l,i) => i%every ? '' :
@@ -209,7 +227,7 @@ function stackChart(labels, series, opts){
          + '<text x="'+(W-PR+8)+'" y="'+(PT+ih)+'" font-size="10.5" fill="var(--ink3)" '
          + 'font-family="IBM Plex Mono,monospace">0</text>';
   }
-  return '<svg viewBox="0 0 '+W+' '+H+'" role="img">'+g.join('')+bars+xl+line+'</svg>';
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img">'+g.join('')+bars+vals+xl+line+'</svg>';
 }
 
 /* ── 서점 비중 ── */
@@ -274,7 +292,7 @@ function fundDoneBlock(k, p){
   const units = p.unitPrice ? Math.round(p.raised/p.unitPrice) : null;
   const tiers = (p.tiers||[]).slice().sort((a,b)=>a[0]-b[0]);
   const hit = tiers.filter(t => p.raised >= t[0]);
-  return '<div class="sec">' + sech('교보 바로펀딩 — 끝났습니다',
+  return '<div class="sec">' + sech('교보 바로펀딩 · 종료',
       md(p.from)+'~'+md(p.to)+' · '+days+'일 진행 · 최종 결과')
     + '<div class="tiles">'
     + tile('최종 모금액', won(p.raised), '목표 '+won(p.goal)+' 대비 <b>'+nf(p.pct)+'%</b>')
@@ -392,7 +410,7 @@ function freshBlock(){
   ].filter(r => r.d);
   const today = [META.lastAuto, ADASOF, ASOF].filter(Boolean).sort().pop();
   const fail = (D.rankLastTry && D.rankLastTry.ok === false) ? '수집 실패' : '';
-  return '<div class="sec">' + sech('자료가 언제까지 들어왔나',
+  return '<div class="sec">' + sech('데이터 현황',
       '원천마다 들어오는 속도가 다릅니다 · 오늘 기준 ' + esc(today))
     + '<div class="fresh">' + rows.map(r => {
         const lag = dayGap(r.d, today);
@@ -427,6 +445,25 @@ function wcmp(cur, prev, fmt){
        + ' <span class="muted">지난주 '+f(prev)+'</span>';
 }
 
+/* 이번 주 소재 그림 줄. adThumb 열쇠가 '책|소재명|#n' 이라 n 을 훑어 맞는 것을 찾는다.
+   (#n 은 '같은 이름끼리의 소진 순위'라 주마다 달라질 수 있어 고정할 수 없다) */
+function adWeekThumb(book, name){
+  for (let i = 0; i < 12; i++){
+    const key = ADT[book+'|'+name+'|#'+i];
+    if (key && (TH.ad||{})[key]) return TH.ad[key];
+  }
+  return null;
+}
+function adWeekStrip(rows){
+  const items = rows.slice(0,10).map(r => ({
+    img: adWeekThumb(r[0], r[1]),
+    main: won(r[2]),
+    sub: (D.books[r[0]]?D.books[r[0]].short+' · ':'') + '클릭 '+nf(r[5]),
+    alt: r[1] }));
+  if (!items.some(i => i.img)) return '';
+  return '<p class="note" style="margin:16px 0 8px"><b>이번 주 소재</b> — 돈 쓴 순</p>' + strip(items);
+}
+
 function weekBlock(keys, isAll){
   const sCur = new Set(winDays(ASOF, WEEK, 0)), sPrev = new Set(winDays(ASOF, WEEK, 1));
   const aCur = new Set(winDays(ADASOF, WEEK, 0)), aPrev = new Set(winDays(ADASOF, WEEK, 1));
@@ -457,7 +494,7 @@ function weekBlock(keys, isAll){
     + tile('판매', nf(uCur)+'부', wcmp(uCur, uPrev, v=>nf(v)+'부'))
     + tile('들어온 돈', won(rev), '판 권수 × 정가의 65%')
     + tile('광고비', won(spCur), wcmp(spCur, spPrev, won))
-    + tile('한 권 팔려고', uCur?nf(spCur/uCur)+'원':'—', '광고비 ÷ 판매 권수')
+    + tile('한 권당 광고비', uCur?nf(spCur/uCur)+'원':'—', '광고비 ÷ 판매 권수')
     + tile('광고 눌린 횟수', nf(clCur)+'회', '')
     + (YT ? tile('유튜브 조회', cmp(yCur)+'회', wcmp(yCur, yPrev, cmp)) : '')
     + '</div></div>';
@@ -471,7 +508,7 @@ function weekBlock(keys, isAll){
     const shown = rows.slice(0, isAll ? 12 : 10);
     if (shown.length){
       const lag = dayGap(AW.to, ADASOF);
-      h += '<div class="sec">' + sech('이번 주 잘 나간 광고 소재',
+      h += '<div class="sec">' + sech('이번 주 광고 소재',
           esc(AW.from)+'~'+esc(AW.to)+' · 돈 많이 쓴 순 · 소재 '+rows.length+'개',
           lag > 2 ? '소재별은 '+esc(AW.to)+'까지 · 주 1회 갱신' : '')
         + '<div class="panel scroll"><table><thead><tr>'
@@ -485,8 +522,9 @@ function weekBlock(keys, isAll){
             + '<td>'+nf(r[5])+'</td><td>'+(+r[6]).toFixed(1)+'%</td>'
             + '<td>'+(r[7]?nf(r[7])+'원':'—')+'</td></tr>').join('')
         + '</tbody></table></div>'
-        + '<p class="note"><b>CTR 이 높은데 CPC 가 싼 소재</b>가 이번 주의 승자입니다 — '
-        + '같은 돈으로 더 많은 사람을 책 페이지까지 데려온 소재입니다.</p></div>';
+        + adWeekStrip(shown)
+        + '<p class="note"><b>본 사람 중 누른 비율이 높은데 클릭 한 번 값이 싼 소재</b>가 '
+        + '이번 주의 승자입니다 — 같은 돈으로 더 많은 사람을 책 페이지까지 데려온 소재입니다.</p></div>';
     }
   }
 
@@ -522,7 +560,7 @@ function weekBlock(keys, isAll){
         alt:String(v[2]).slice(0,24)}))});
   }
   if (lanes.length){
-    h += '<div class="sec">' + sech('이번 주에 올린 콘텐츠',
+    h += '<div class="sec">' + sech('이번 주 콘텐츠',
         esc(since)+' 이후 올린 것 · 조회 많은 순 · 광고 아닌 우리 콘텐츠')
       + '<div class="tiles">' + lanes.map(l =>
           tile(l.name, nf(l.n)+'건', '조회 '+cmp(l.views)+'회')).join('') + '</div>'
@@ -553,15 +591,15 @@ function adBlock(keys, isAll){
   }).filter(s => s.vals.some(v=>v>0));
   const clickMap = new Map(days.map(d => [d, sum(inWin.filter(r=>r[0]===d).map(r=>r[4]))]));
 
-  let h = '<div class="sec">' + sech('광고에 얼마 쓰고 몇 명이 봤나',
+  let h = '<div class="sec">' + sech('광고 집행',
       '최근 '+days.length+'일 · 메타(인스타·페북) 광고계정 '+esc(D.account))
     + '<div class="tiles">'
     + tile('쓴 돈', won(spend), '하루 평균 '+won(spend/days.length))
     + tile('보여진 횟수', cmp(imps)+'회', '본 사람 '+cmp(reach)+'명')
     + tile('눌린 횟수', nf(clicks)+'회', '본 사람 중 '+pct(clicks,imps).toFixed(1)+'%가 누름')
-    + tile('한 번 눌리는 데', nf(clicks?spend/clicks:0)+'원', '같은 돈으로 몇 명 데려오나')
-    + tile('같은 사람에게 몇 번', reach?(imps/reach).toFixed(1)+'번':'—', '노출 ÷ 도달')
-    + tile('한 권 팔려고', units?nf(spend/units)+'원':'—', '그 기간 '+nf(units)+'부 판매')
+    + tile('클릭 한 번 값', nf(clicks?spend/clicks:0)+'원', '같은 돈으로 몇 명 데려오나')
+    + tile('같은 사람 반복', reach?(imps/reach).toFixed(1)+'번':'—', '노출 ÷ 도달')
+    + tile('한 권당 광고비', units?nf(spend/units)+'원':'—', '그 기간 '+nf(units)+'부 판매')
     + '</div>'
     + '<div class="chart"><div class="legend">'
     + series.map(s=>'<span><i style="background:'+s.c+'"></i>'+esc(s.name)+'</span>').join('')
@@ -588,7 +626,7 @@ function adBlock(keys, isAll){
     }
     const tot = grand;
     const PC = {Instagram:'#d2649a', Facebook:'#2a78d6', Threads:'#5b6674'};
-    h += '<div class="sec" style="margin-top:20px">' + sech('광고가 어디에 나갔나', '전 기간 광고비 기준')
+    h += '<div class="sec" style="margin-top:20px">' + sech('광고 나간 곳', '전 기간 광고비 기준')
       + '<div class="panel" style="padding:18px 20px">'
       + '<div class="mix">' + pl.map(([n,v]) => {
           const p = v[0]/tot*100;
@@ -660,12 +698,12 @@ function igBlock(k, acc){
       ps.length + '건 · 광고 아닌 우리 콘텐츠입니다'
       + (cl ? ' · 프로필 링크 <b>vo.la/'+esc(cl.slug)+'</b>' : ''))
     + '<div class="tiles">'
-    + tile('몇 번 보여졌나', cmp(views)+'회', ps.length+'개 게시물')
+    + tile('보여진 횟수', cmp(views)+'회', ps.length+'개 게시물')
     + tile('저장', nf(saves)+'회', views?'조회 대비 '+pct(saves,views).toFixed(2)+'%':'—')
     + tile('공유', nf(shares)+'회', views?'조회 대비 '+pct(shares,views).toFixed(2)+'%':'—')
     + clickTile(cl, views)
-    + tile('프로필 보러 간 수', nf(visit)+'회', '게시물에서 프로필로')
-    + (link ? tile('게시물 링크 누름', nf(link)+'회', '게시물에 직접 건 링크') : '')
+    + tile('프로필 방문', nf(visit)+'회', '게시물에서 프로필로')
+    + (link ? tile('게시물 링크 클릭', nf(link)+'회', '게시물에 직접 건 링크') : '')
     + (foll ? tile('새 팔로우', nf(foll)+'명', esc(IGF.asOf)+' 기준 · 앱에서 옮긴 값') : '')
     + '</div>'
     + strip(top.slice(0,10).map(p => ({
@@ -699,11 +737,11 @@ function fbBlock(k){
       ps.length+'건 · 광고 아닌 우리 콘텐츠입니다'
       + (cl ? ' · 캡션 링크 <b>vo.la/'+esc(cl.slug)+'</b>' : ''))
     + '<div class="tiles">'
-    + tile('몇 번 보여졌나', cmp(views)+'회', '본 사람 '+cmp(reach)+'명')
+    + tile('보여진 횟수', cmp(views)+'회', '본 사람 '+cmp(reach)+'명')
     + tile('좋아요', nf(likes)+'개', views?'조회 대비 '+pct(likes,views).toFixed(2)+'%':'—')
     + tile('공유', nf(shares)+'회', '')
     + clickTile(cl, views)
-    + tile('게시물 링크 누름', nf(link)+'회', views?'조회 대비 '+pct(link,views).toFixed(3)+'%':'—')
+    + tile('게시물 링크 클릭', nf(link)+'회', views?'조회 대비 '+pct(link,views).toFixed(3)+'%':'—')
     + '</div>'
     + strip((byLink.length?byLink:top.slice(0,10)).map(p => ({
         url:url(p), img:(TH.fb||{})[p[7]]||null,
@@ -736,7 +774,7 @@ function ytBlock(k){
       + (cl ? ' · 프로필 링크 <b>vo.la/'+esc(cl.slug)+'</b>' : ''),
       lag > 1 ? '저장·공유와 일별 그래프는 '+esc(YT.through)+'까지만 확정' : '')
     + '<div class="tiles">'
-    + tile('몇 번 보여졌나', cmp(b.views)+'회', '영상 '+nf(b.n)+'건')
+    + tile('보여진 횟수', cmp(b.views)+'회', '영상 '+nf(b.n)+'건')
     + tile('좋아요', nf(b.likes)+'개', b.views?'조회 대비 '+pct(b.likes,b.views).toFixed(2)+'%':'—')
     + tile('저장', nf(b.saves)+'회', '재생목록에 담은 횟수')
     + clickTile(cl, b.views)
@@ -782,6 +820,24 @@ function ytChannelBlock(){
    콘텐츠 성적은 채널마다 단위가 다르다(인스타 조회 · 페북 조회 · 유튜브 조회).
    서로 비교되는 건 **책 페이지로 넘어온 클릭** 하나뿐이라, 그걸 축으로 한 표에 모은다.
    "클릭이 전환을 볼 수 있는 유일한 숫자"라는 게 이 표의 전제다. */
+/* 채널별 유입 막대 — 표는 정확하지만 한눈에 안 들어온다.
+   "어느 채널이 큰가"는 길이로 보는 게 빠르다. 클릭을 못 세는 채널은 빗금으로 구분한다. */
+function chanBars(rows){
+  const have = rows.filter(r => r.cl && r.cl.tot > 0);
+  if (!have.length) return '';
+  const mx = Math.max(...have.map(r => r.cl.tot));
+  return '<div class="panel" style="padding:16px 18px;margin-bottom:12px">'
+    + have.sort((a,b)=>b.cl.tot-a.cl.tot).map(r =>
+        '<div class="hbar"><span class="hl"><i style="background:'+r.c+'"></i>'+esc(r.name)+'</span>'
+        + '<span class="ht"><b style="width:'+Math.max(2, r.cl.tot/mx*100).toFixed(1)+'%;background:'+r.c+'"></b></span>'
+        + '<span class="hv">'+nf(r.cl.tot)+'<small>회</small></span></div>').join('')
+    + rows.filter(r => r.n && !r.cl).map(r =>
+        '<div class="hbar"><span class="hl"><i style="background:'+r.c+';opacity:.35"></i>'+esc(r.name)+'</span>'
+        + '<span class="ht"><b class="none"></b></span>'
+        + '<span class="hv muted" style="font-size:12px">셀 수 없음</span></div>').join('')
+    + '</div>';
+}
+
 function chanSummaryBlock(k){
   const b = D.books[k];
   const ig = b.igPosts||[], fb = b.fbPosts||[];
@@ -809,14 +865,15 @@ function chanSummaryBlock(k){
             tot:(VL.total||{})[slug[0]] != null ? VL.total[slug[0]] : sum(Object.values(day))};
   })();
 
-  return '<div class="sec">' + sech('채널별로 몇 명을 데려왔나',
+  return '<div class="sec">' + sech('채널별 유입',
       '조회수는 채널마다 단위가 달라 비교가 안 됩니다 — <b>책 페이지로 넘어온 클릭</b>으로 봅니다',
       VL && VL.totalAsOf ? '클릭 '+esc(VL.totalAsOf)+' 기준' : '')
     + '<div class="tiles">'
-    + tile('우리 콘텐츠가 데려온 사람', nf(totClick)+'회', '광고 뺀 순수 유입')
-    + (ad ? tile('광고가 데려온 사람', nf(ad.tot)+'회', 'vo.la/'+esc(ad.slug)) : '')
-    + (best ? tile('가장 많이 데려온 채널', esc(best.name), nf(best.cl.tot)+'회') : '')
+    + tile('우리 콘텐츠 유입', nf(totClick)+'회', '광고 뺀 순수 유입')
+    + (ad ? tile('광고 유입', nf(ad.tot)+'회', 'vo.la/'+esc(ad.slug)) : '')
+    + (best ? tile('1위 채널', esc(best.name), nf(best.cl.tot)+'회') : '')
     + '</div>'
+    + chanBars(rows)
     + '<div class="panel scroll"><table><thead><tr><th>채널</th>'
     + '<th>올린 것</th><th>몇 번 보여졌나<span class="t2">조회</span></th>'
     + '<th>책 페이지로<span class="t2">클릭</span></th>'
@@ -905,7 +962,7 @@ function eventBlock(k){
   if (!rows.length) return '';
   const pub = b.pub;
   const dd = (a,z) => Math.round((Date.parse(z+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'))/86400000);
-  return '<div class="sec">' + sech('그날 무슨 일이 있었나',
+  return '<div class="sec">' + sech('마케팅 일지',
       '판매 시트에 적어 둔 메모 · 최근 순 · 출간 '+esc(String(pub).replace(/-/g,'.')))
     + '<div class="panel scroll"><table><thead><tr><th>날짜</th><th>출간 기준</th>'
     + '<th>그날 판매</th><th>한 일</th></tr></thead><tbody>'
@@ -949,7 +1006,7 @@ function volaBlock(k){
     + '<td class="muted" style="text-align:left">'+esc(r.slug)+'</td>'
     + '<td class="big">'+nf(r.tot)+'</td><td>'+nf(r.win)+'</td></tr>');
 
-  return '<div class="sec">' + sech('짧은 링크를 몇 번 눌렀나',
+  return '<div class="sec">' + sech('링크 클릭',
       '어느 경로로 책 페이지에 들어왔는지 · 링크 '+rowsAll.length+'개',
       VL.to ? VL.to+'까지' : '')
     + '<div class="tiles">'
@@ -973,7 +1030,7 @@ function volaBlock(k){
 /* ── 돈 계산 기준 ── 화면의 '들어온 돈'이 어떤 가정 위에 서 있는지 밝혀 둔다 */
 function econBlock(){
   const E = D.econ; if (!E) return '';
-  return '<div class="sec">' + sech('돈 계산 기준', '이 화면의 금액이 어떤 값으로 계산됐는지')
+  return '<div class="sec">' + sech('계산 기준', '이 화면의 금액이 어떤 값으로 계산됐는지')
     + '<div class="panel" style="padding:16px 20px">'
     + '<div class="tiles" style="margin:0">'
     + tile('출판사 몫', Math.round(E.supplyRate*100)+'%', '정가에서 서점 몫을 뺀 비율')
@@ -1003,9 +1060,9 @@ function selectCollab(){
   document.getElementById('kpis').innerHTML =
       kpi('나간 영상', 'COLLAB VIDEOS', nf(vids.length), '건',
           vids.map(v=>esc(v.ch)).join(' · '))
-    + kpi('남의 채널에서 본 사람', 'VIEWS', cmp(views), '회',
+    + kpi('협업 채널 조회', 'VIEWS', cmp(views), '회',
           '우리 채널이 아니라 <b>협업 채널</b>에서 난 조회수입니다')
-    + kpi('책 페이지로 넘어옴', 'CLICKED THROUGH', nf(clicks), '명',
+    + kpi('책 페이지 유입', 'CLICKED THROUGH', nf(clicks), '명',
           mViews ? '측정 가능한 '+cmp(mViews)+'회 중 <b>'+pct(clicks,mViews).toFixed(3)+'%</b>'
                  : '링크가 붙은 영상이 없습니다')
     + kpi('올라올 예정', 'UPCOMING', nf(soon.length), '건',
@@ -1016,7 +1073,7 @@ function selectCollab(){
     + '거기서 <b>책 페이지까지 넘어온 사람</b>뿐입니다. 그래서 영상마다 서점별 단축링크를 걸어 두고 '
     + '그 클릭을 셉니다. 링크 없이 설명란에 서점 주소를 바로 건 영상은 <b>한 명도 셀 수 없습니다</b>.';
 
-  let h = '<div class="sec">' + sech('나간 영상',
+  let h = '<div class="sec">' + sech('협업 영상',
       (bk ? esc(bk.title||bk.short)+' · ' : '') + '조회 많은 순',
       C.asOf ? esc(String(C.asOf).slice(0,10))+' 기준' : '')
     + vids.map(v => {
@@ -1035,7 +1092,7 @@ function selectCollab(){
           +     '<a href="https://www.youtube.com/watch?v='+esc(v.id)+'" target="_blank" rel="noopener">'
           +     esc(v.title)+' ↗</a></div>'
           +   '<div class="tiles" style="margin:0 0 10px">'
-          +     tile('그 채널에서 본 사람', cmp(v.views)+'회', '좋아요 '+nf(v.likes)+' · 댓글 '+nf(v.comments))
+          +     tile('그 채널 조회', cmp(v.views)+'회', '좋아요 '+nf(v.likes)+' · 댓글 '+nf(v.comments))
           +     tile('책 페이지로 넘어옴', dead ? '셀 수 없음' : nf(cl)+'명',
                      dead ? '링크를 안 걸었습니다'
                           : (v.views ? '조회 대비 '+pct(cl,v.views).toFixed(3)+'%' : ''))
@@ -1049,7 +1106,7 @@ function selectCollab(){
     + '</div>';
 
   if (soon.length){
-    h += '<div class="sec">' + sech('올라올 예정', '링크를 미리 걸어 두면 올라간 뒤 바로 셀 수 있습니다')
+    h += '<div class="sec">' + sech('업로드 예정', '링크를 미리 걸어 두면 올라간 뒤 바로 셀 수 있습니다')
       + '<div class="panel scroll"><table><thead><tr><th>채널</th><th>언제</th>'
       + '<th>걸어 둔 링크</th><th>지금까지 클릭</th></tr></thead><tbody>'
       + soon.map(u => {
@@ -1133,14 +1190,14 @@ function select(k){
       const map = new Map(D.books[x].sales.map(r=>[r[0], sold(r)]));
       return {name:D.books[x].short, c:BC[x], vals:days.map(d=>map.get(d)||0)};
     });
-    h += '<div class="sec"><div class="sech"><h2>날마다 몇 부 팔렸나</h2><p>최근 30일 · 색은 책</p></div>'
+    h += '<div class="sec"><div class="sech"><h2>일별 판매</h2><p>최근 30일 · 색은 책</p></div>'
       + '<div class="chart"><div class="legend">' + D.order.map(x =>
           '<span><i style="background:'+BC[x]+'"></i>'+esc(D.books[x].short)+'</span>').join('') + '</div>'
       + stackChart(days, byBook, {h:250}) + '</div></div>';
 
     /* 서점 비중 */
     const rows30 = D.order.flatMap(x => D.books[x].sales.filter(r => r[0] >= days[0]));
-    h += '<div class="sec"><div class="sech"><h2>어느 서점에서 팔렸나</h2><p>최근 30일 합계</p></div>'
+    h += '<div class="sec"><div class="sech"><h2>서점별 판매</h2><p>최근 30일 합계</p></div>'
       + '<div class="panel" style="padding:18px 20px">' + mixBlock(rows30) + '</div></div>';
 
     h += adBlock(D.order, true);
@@ -1156,7 +1213,7 @@ function select(k){
         vals:days.map(d => { const r = inWin.find(x=>x[0]===d); return r ? Math.max(0,+r[s.i]||0) : 0; })}))
       .filter(s => s.vals.some(v=>v>0));
     const adMap = new Map((b.daily||[]).map(r=>[r[0], +r[1]||0]));
-    h += '<div class="sec"><div class="sech"><h2>날마다 몇 부 팔렸나</h2>'
+    h += '<div class="sec"><div class="sech"><h2>일별 판매</h2>'
       + '<p>최근 '+days.length+'일 · 색은 서점 · <span style="color:var(--bad)">빨간 선</span>은 그날 쓴 광고비</p></div>'
       + '<div class="chart"><div class="legend">' + byStore.map(s =>
           '<span><i style="background:'+s.c+'"></i>'+esc(s.name)+'</span>').join('')
@@ -1164,7 +1221,7 @@ function select(k){
       + stackChart(days, byStore, {h:250, line:{vals:days.map(d=>adMap.get(d)||0), c:'var(--bad)'}})
       + '</div></div>';
 
-    h += '<div class="sec"><div class="sech"><h2>어느 서점에서 팔렸나</h2><p>전 기간 합계</p></div>'
+    h += '<div class="sec"><div class="sech"><h2>서점별 판매</h2><p>전 기간 합계</p></div>'
       + '<div class="panel" style="padding:18px 20px">' + mixBlock(b.sales) + '</div></div>';
 
     h += fundBlock(k);
@@ -1202,22 +1259,22 @@ function select(k){
    구획을 만드는 함수들은 자기가 어느 갈래인지 모른다. 그리고 나서 제목으로 묶는다 —
    그래야 구획을 새로 만들 때 등록하는 걸 잊어도 화면이 깨지지 않는다(「그 밖」으로 떨어진다). */
 const CATS = [
-  {id:'week',    name:'이번 주',      keys:['이번 주 요약','이번 주 잘 나간 광고 소재','이번 주에 올린 콘텐츠']},
-  {id:'sales',   name:'판매',         keys:['책별 현황','날마다 몇 부 팔렸나','어느 서점에서 팔렸나','그날 무슨 일이 있었나']},
-  {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보 바로펀딩 — 끝났습니다','교보문고 등수']},
-  {id:'ad',      name:'광고',         keys:['광고에 얼마 쓰고 몇 명이 봤나','광고가 어디에 나갔나','광고 소재별 성적']},
-  {id:'organic', name:'우리 콘텐츠',  keys:['채널별로 몇 명을 데려왔나','유튜브 채널'],
+  {id:'week',    name:'이번 주',      keys:['이번 주 요약','이번 주 광고 소재','이번 주 콘텐츠']},
+  {id:'sales',   name:'판매',         keys:['책별 현황','일별 판매','서점별 판매','마케팅 일지']},
+  {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수']},
+  {id:'ad',      name:'광고',         keys:['광고 집행','광고 나간 곳','광고 소재별 성적']},
+  {id:'organic', name:'우리 콘텐츠',  keys:['채널별 유입','유튜브 채널'],
    match:t => / — (인스타그램|페이스북|유튜브)$/.test(t)},
-  {id:'collab',  name:'협업',          keys:['나간 영상','올라올 예정']},
-  {id:'traffic', name:'유입 경로',    keys:['짧은 링크를 몇 번 눌렀나']},
-  {id:'base',    name:'기준 · 자료',  keys:['돈 계산 기준','자료가 언제까지 들어왔나','말 풀이']},
+  {id:'collab',  name:'협업',          keys:['협업 영상','업로드 예정']},
+  {id:'traffic', name:'유입 경로',    keys:['링크 클릭']},
+  {id:'base',    name:'기준 · 자료',  keys:['계산 기준','데이터 현황','말 풀이']},
 ];
 /* 처음 열어 둘 것 — 한눈에 읽히는 것만 펴 두고, 긴 표·그림 줄은 접어 둔다 */
-const OPEN_BY_DEFAULT = new Set(['이번 주 요약','이번 주 잘 나간 광고 소재','이번 주에 올린 콘텐츠',
-  '책별 현황','날마다 몇 부 팔렸나','어느 서점에서 팔렸나',
-  '교보 바로펀딩','교보 바로펀딩 — 끝났습니다','교보문고 등수','그날 무슨 일이 있었나',
-  '광고에 얼마 쓰고 몇 명이 봤나','자료가 언제까지 들어왔나',
-  '나간 영상','올라올 예정','채널별로 몇 명을 데려왔나']);
+const OPEN_BY_DEFAULT = new Set(['이번 주 요약','이번 주 광고 소재','이번 주 콘텐츠',
+  '책별 현황','일별 판매','서점별 판매',
+  '교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수','마케팅 일지',
+  '광고 집행','데이터 현황',
+  '협업 영상','업로드 예정','채널별 유입']);
 
 const LS = 'philotic-v2-open';
 const readOpen = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch(e){ return {}; } };
