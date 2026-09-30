@@ -249,6 +249,22 @@ svg{display:block;width:100%;height:auto;overflow:visible}
 .brow i{font-style:normal;font-size:11px;color:var(--ink2);display:block}
 .brow b{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
 
+/* ── 책 탭 머리 ── */
+.bhead{display:flex;gap:20px;align-items:flex-start;background:var(--surface);
+  border:1px solid var(--rule);border-left:3px solid var(--bc);border-radius:14px;padding:18px 20px}
+.bhead .cov{width:92px;aspect-ratio:3/4.3;object-fit:cover;border-radius:7px;flex:none;
+  box-shadow:0 3px 12px rgba(0,0,0,.18)}
+.bhead .bh{min-width:0;flex:1}
+.bhead h2{font-size:19px;font-weight:700;margin:0;letter-spacing:-.02em;line-height:1.3}
+.bhead p{margin:4px 0 0;font-size:12.5px}
+.bhead p b{color:var(--ink);font-weight:700}
+.bhead .brow{margin-top:14px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
+@media(max-width:600px){.bhead{gap:14px;padding:14px 15px}.bhead .cov{width:68px}}
+
+/* 표 안 작은 표지 */
+.minicov{width:26px;aspect-ratio:3/4.3;object-fit:cover;border-radius:3px;flex:none;
+  box-shadow:0 1px 4px rgba(0,0,0,.18)}
+
 /* ── 표 칸 안 막대 ── 숫자만 있으면 크기 비교가 안 된다 */
 .cellbar{position:relative;min-width:76px;height:20px;display:flex;align-items:center;justify-content:flex-end}
 .cellbar b{position:absolute;left:0;top:3px;bottom:3px;border-radius:4px;opacity:.26}

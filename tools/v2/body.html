@@ -1154,6 +1154,29 @@ function selectCollab(){
   scrollTo({top:0, behavior:'smooth'});
 }
 
+/* 책 탭 머리 — 표지 한 장이 글자 열 줄보다 빨리 "무슨 책 보는 중인지"를 알려 준다 */
+function bookHead(k){
+  const b = D.books[k], cv = ((D.covers||{}).img||{})[k];
+  const a = agg(k), mm = agg(k, MONTH+'-01');
+  const pa = profit(k, a.units, a.spend);
+  const R = D.ranks[k], r = R ? (R.ranks||{}).onlineDaily : null;
+  const f = (D.funding.projects||{})[k];
+  return '<div class="sec" style="margin-top:0"><div class="bhead" style="--bc:'+BC[k]+'">'
+    + (cv ? '<img class="cov" src="'+cv+'" alt="'+esc(b.short)+' 표지" loading="lazy">' : '')
+    + '<div class="bh">'
+    +   '<h2>'+esc(b.title||b.short)+'</h2>'
+    +   '<p class="muted">출간 '+esc(String(b.pub).replace(/-/g,'.'))
+    +     ' · 정가 '+nf(D.list[k])+'원'
+    +     (r && r.rank ? ' · 교보 일간 <b>'+nf(r.rank)+'위</b>' : '')
+    +     (f && f.done ? ' · 펀딩 '+nf(f.pct)+'% 달성' : '') + '</p>'
+    +   '<div class="brow">'
+    +     '<span><i>누적 판매</i><b>'+nf(a.units)+'부</b></span>'
+    +     '<span><i>이번 달</i><b>'+nf(mm.units)+'부</b></span>'
+    +     '<span><i>누적 남는 돈</i><b class="'+(pa.net>=0?'up':'down')+'">'+won(pa.net)+'</b></span>'
+    +     '<span><i>한 권당 광고비</i><b>'+(a.units?nf(a.per)+'원':'—')+'</b></span>'
+    +   '</div></div></div></div>';
+}
+
 /* ══ 할 일 ══
    숫자를 다 보여줘도 "그래서 뭘 하냐"는 사람이 판단해야 했다. 규칙으로 뽑을 수 있는 것은
    화면이 먼저 말한다. 규칙은 단순하게 — 틀렸을 때 사람이 알아볼 수 있어야 한다. */
@@ -1413,7 +1436,10 @@ function select(k){
       + D.order.map(x => {
           const b = D.books[x], a = agg(x), mm = agg(x, MONTH+'-01'), l = lastDay(x), s7 = last7(x);
           const sp = b.sales.slice(-30).map(sold);
-          return '<tr><td><div class="bk" style="--bc:'+BC[x]+'"><i></i><span>'+esc(b.short)
+          const cv = ((D.covers||{}).img||{})[x];
+          return '<tr><td><div class="bk" style="--bc:'+BC[x]+'"><i></i>'
+               + (cv ? '<img class="minicov" src="'+cv+'" alt="" loading="lazy">' : '')
+               + '<span>'+esc(b.short)
                + '<small>출간 '+esc(b.pub.slice(2).replace(/-/g,'.'))+'</small></span></div></td>'
                + '<td>'+spark(sp, BC[x], 110, 26)+'</td>'
                + '<td class="big">'+nf(l.v)+'</td>'
@@ -1448,6 +1474,7 @@ function select(k){
 
   } else {
     const b = D.books[k];
+    h = bookHead(k) + h;
     const days = b.sales.map(r=>r[0]).slice(-45);
     const inWin = b.sales.filter(r => r[0] >= days[0]);
     const byStore = STORES.map(s => ({name:s.name, c:s.c,
