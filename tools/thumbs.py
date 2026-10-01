@@ -5,10 +5,15 @@
   유튜브 : https://i.ytimg.com/vi/<id>/hqdefault.jpg
            막혀 있으면 https://img.youtube.com/vi/<id>/hqdefault.jpg
   인스타 : https://www.instagram.com/p/<shortcode>/ 의 og:image
-  페북   : https://www.facebook.com/<id> 의 og:image
+           비면 https://www.instagram.com/p/<shortcode>/embed/captioned/ 의 display_url
+  페북   : https://www.facebook.com/<페이지id>/posts/<글id> 의 og:image
+  그림   : scontent*.cdninstagram.com · scontent*.fbcdn.net
 
 인스타·페북은 이 환경에 커넥터가 없어 공개 페이지에서 og:image 를 읽는 수밖에 없다.
-그 주소가 환경 허용목록에 없으면(CONNECT tunnel failed) 그냥 건너뛰고 보고만 한다.
+그런데 둘 다 보통 브라우저 User-Agent 로 받으면 자바스크립트 껍데기나 로그인 담만 오고
+og 메타가 없다. 크롤러 User-Agent(PAGE_UA)로 받아야 서버가 메타를 그려 준다.
+페북은 글 번호만으로는 로그인 담이 뜬다. `<페이지id>/posts/<글id>` 꼴이어야 공개로 열린다.
+로그인하지 않는다. 그 주소가 환경 허용목록에 없으면(CONNECT tunnel failed) 건너뛰고 보고만 한다.
 우회하지 않고, 없는 그림을 지어내지도 않는다.
 
 쓰는 블록은 `thumbs` 하나뿐이다. payload·ytData 등 다른 블록은 건드리지 않는다.
@@ -20,6 +25,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -27,14 +33,24 @@ MAX_W = 320          # 가로 320px 안쪽으로 줄인다
 MAX_BYTES = 15360    # 한 장 15KB 를 넘기지 않는다 (base64 전 원본 기준)
 BLOCK_LIMIT = 12 * 1024 * 1024   # 블록이 이보다 커지면 오래된 것부터 버린다
 TIMEOUT = 30
+# 공개 페이지는 몰아치면 429 가 난다. 한 장 받을 때마다 이만큼 쉰다.
+DELAY = float(os.environ.get("THUMBS_DELAY", "1.2"))
+RETRY_429 = (20, 60)   # 429 가 나면 이 초만큼 쉬었다가 다시 해 본다
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/125.0 Safari/537.36")
 
+# 인스타·페북 공개 페이지는 이 User-Agent 라야 og 메타를 그려 준다.
+PAGE_UA = ("facebookexternalhit/1.1 "
+           "(+http://www.facebook.com/externalhit_uatext.php)")
+
 YT_HOSTS = ["https://i.ytimg.com/vi/{id}/hqdefault.jpg",
             "https://img.youtube.com/vi/{id}/hqdefault.jpg"]
-IG_PAGE = "https://www.instagram.com/p/{id}/"
-FB_PAGE = "https://www.facebook.com/{id}"
+IG_PAGES = ["https://www.instagram.com/p/{id}/",
+            "https://www.instagram.com/p/{id}/embed/captioned/"]
+# payload.fbPage("1분 지혜") 의 페이지 번호. 글 번호만 쓰면 로그인 담이 뜬다.
+FB_PAGE_ID = "1003587992847027"
+FB_PAGES = ["https://www.facebook.com/%s/posts/{id}" % FB_PAGE_ID]
 
 
 # ---------------------------------------------------------------- 블록 입출력
@@ -62,9 +78,9 @@ def dump_block(obj):
 
 # ---------------------------------------------------------------- 내려받기
 
-def fetch(url, referer=None):
+def fetch(url, referer=None, ua=UA):
     """(bytes, content_type) 또는 예외."""
-    headers = {"User-Agent": UA, "Accept-Language": "ko,en;q=0.8"}
+    headers = {"User-Agent": ua, "Accept-Language": "ko,en;q=0.8"}
     if referer:
         headers["Referer"] = referer
     req = urllib.request.Request(url, headers=headers)
@@ -121,17 +137,57 @@ OG2 = re.compile(
     re.I)
 
 
-def og_image(page_url):
-    html, _ = fetch(page_url)
-    text = html.decode("utf-8", "replace")
+# 임베드 페이지에는 og 가 없고 JSON 조각 안에 그림 주소가 들어 있다.
+JSON_SRC = re.compile(
+    r'"(?:display_url|thumbnail_src|src)"\s*:\s*"(https:[^"]+?\.(?:jpg|jpeg|webp)[^"]*)"', re.I)
+LOGIN_WALL = re.compile(r'login_form|'
+                        r'You must log in|\uB85C\uADF8\uC778\uD558\uC5EC', re.I)
+
+
+def image_src(text):
+    """페이지 HTML 에서 그림 주소 하나를 찾는다."""
     m = OG.search(text) or OG2.search(text)
-    if not m:
-        raise ValueError("og:image 없음(로그인 벽이거나 비공개)")
-    src = m.group(1).replace("&amp;", "&")
-    raw, ctype = fetch(src, referer=page_url)
-    if "image" not in ctype:
-        raise ValueError("og:image 가 그림이 아니다: %s" % ctype[:40])
-    return raw
+    if m:
+        return m.group(1).replace("&amp;", "&")
+    m = JSON_SRC.search(text)
+    if m:
+        return m.group(1).encode().decode("unicode_escape").replace("&amp;", "&")
+    return None
+
+
+def page_image(page_urls):
+    """공개 페이지 후보를 차례로 열어 첫 번째로 나오는 그림을 받아 온다."""
+    why = []
+    for page_url in page_urls:
+        html, err = None, "429 가 걷히지 않는다"
+        for wait in (0,) + RETRY_429:
+            if wait:
+                time.sleep(wait)
+            try:
+                html, _ = fetch(page_url, ua=PAGE_UA)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 429:
+                    continue          # 몰아쳐서 막힌 것이니 쉬었다 다시
+                err = "HTTP %s" % e.code
+                break
+            except Exception as e:
+                err = str(e).strip()[:60]
+                break
+        if html is None:
+            why.append(err)
+            continue
+        text = html.decode("utf-8", "replace")
+        src = image_src(text)
+        if not src:
+            why.append("로그인 담" if LOGIN_WALL.search(text) else "그림 주소 없음")
+            continue
+        raw, ctype = fetch(src, referer=page_url, ua=PAGE_UA)
+        if "image" not in ctype:
+            why.append("그림이 아니다: %s" % ctype[:30])
+            continue
+        return raw
+    raise ValueError(" / ".join(dict.fromkeys(why)) or "열리지 않음")
 
 
 # ---------------------------------------------------------------- 빠진 것 세기
@@ -200,31 +256,37 @@ def main(path):
     fb_ok, fb_why = reachable("https://www.facebook.com/")
     print("  %-34s %s %s" % ("https://www.facebook.com", "열림" if fb_ok else "막힘", fb_why))
 
-    jobs = [("yt", missing["yt"], yt_tmpl, yt_tmpl, None if yt_tmpl else "유튜브 주소가 모두 막혔다"),
-            ("ig", missing["ig"], IG_PAGE if ig_ok else None, None, None if ig_ok else "instagram.com 이 막혔다: %s" % ig_why),
-            ("fb", missing["fb"], FB_PAGE if fb_ok else None, None, None if fb_ok else "facebook.com 이 막혔다: %s" % fb_why)]
+    # 페북이 인스타보다 잘 받힌다. 하나도 못 받고 끝나지 않게 페북부터 돈다.
+    jobs = [("fb", missing["fb"], FB_PAGES if fb_ok else None, False,
+             None if fb_ok else "facebook.com 이 막혔다: %s" % fb_why),
+            ("ig", missing["ig"], IG_PAGES if ig_ok else None, False,
+             None if ig_ok else "instagram.com 이 막혔다: %s" % ig_why),
+            ("yt", missing["yt"], [yt_tmpl] if yt_tmpl else None, True,
+             None if yt_tmpl else "유튜브 주소가 모두 막혔다")]
 
     got = {"ig": 0, "fb": 0, "yt": 0}
     skipped = {}
     failed = {"ig": [], "fb": [], "yt": []}
 
     print("\n[받기]")
-    for kind, want, tmpl, direct, reason in jobs:
+    for kind, want, tmpls, direct, reason in jobs:
         if not want:
             continue
-        if tmpl is None:
+        if tmpls is None:
             skipped[kind] = reason
             print("  %s: %d 장 건너뜀 — %s" % (kind, len(want), reason))
             continue
-        for key in sorted(want, key=lambda k: want[k]):
-            url = tmpl.format(id=key)
+        for n, key in enumerate(sorted(want, key=lambda k: want[k])):
+            urls = [t.format(id=key) for t in tmpls]
+            if not direct and n:
+                time.sleep(DELAY)
             try:
                 if direct:                       # 그림 주소를 바로 안다
-                    raw, ctype = fetch(url)
+                    raw, ctype = fetch(urls[0])
                     if "image" not in ctype:
                         raise ValueError("그림이 아니다: %s" % ctype[:40])
-                else:                            # 공개 페이지에서 og:image 를 찾는다
-                    raw = og_image(url)
+                else:                            # 공개 페이지에서 그림 주소를 찾는다
+                    raw = page_image(urls)
                 thumbs[kind][key] = as_data_uri(raw)
                 got[kind] += 1
                 print("  %s %s  %s  %.1fKB"
@@ -235,8 +297,8 @@ def main(path):
                 print("  %s %s  실패 — %s" % (kind, key, str(e).strip()[:100]))
 
     total = sum(got.values())
-    print("\n새로 받은 것  인스타 %d · 페북 %d · 유튜브 %d  (합 %d)"
-          % (got["ig"], got["fb"], got["yt"], total))
+    print("\n새로 받은 것  페북 %d · 인스타 %d · 유튜브 %d  (합 %d)"
+          % (got["fb"], got["ig"], got["yt"], total))
     if total == 0:
         print("한 장도 못 받았다. 파일을 고치지 않는다.")
         return 1
@@ -267,7 +329,7 @@ def main(path):
              len(check.get("ad") or {})))
 
     print("\n[아직 빠진 것]")
-    for kind in ("ig", "fb", "yt"):
+    for kind in ("fb", "ig", "yt"):
         left = [i for i in need[kind] if i not in check.get(kind, {})]
         if not left:
             continue
