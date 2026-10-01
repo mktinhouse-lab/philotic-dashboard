@@ -355,7 +355,11 @@ const VL  = D.volaDaily || null;
 const META = D.meta || {};
 /* 채널 색 — 옛 대시보드와 같은 색을 쓴다. 두 화면을 오가도 같은 채널이 같은 색이어야 한다. */
 const CHC = {B:'#2a78d6', P:'#eb6834', F:'#1baf7a', Y:'#c0392b'};
-const IGACC = META.igAcc || {B:'북타쿠', P:'1분지혜'};
+/* 인스타 계정 이름.
+   원천(payload.igAcc)에는 philotic_book 이 「1분지혜」로 적혀 있는데 그건 틀렸다 —
+   1분지혜는 유튜브 채널이고, philotic_book 은 「1분 책방」이다. 원천을 쓰는 루틴이
+   따로 있어 거기서 다시 덮어쓰므로, 화면에서 바로잡는다. */
+const IGACC = Object.assign({B:'북타쿠', P:'1분 책방'}, META.igAcc || {}, {P:'1분 책방'});
 
 const cmp = n => n >= 10000 ? (n/10000).toFixed(n>=100000?0:1)+'만' : nf(n);
 const kday = t => String(t||'').slice(0,10);      /* '2026-07-15T06:19' → '2026-07-15' */
