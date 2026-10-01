@@ -25,6 +25,10 @@ BOOKS = {
     'wonsiin': {'title': '완벽한 원시인',      'match': '완벽한 원시인',      'cat': '인문',     'catCode': 'I', 'path': '인문 > 인문학일반 > 인문교양',     'pid': 'S000219310977'},
     'freud':   {'title': '프로이트의 감정수업', 'match': '프로이트의 감정수업', 'cat': '인문',     'catCode': 'I', 'path': '인문 > 심리학 > 교양심리',        'pid': 'S000218149524'},
     'muhan':   {'title': '무한의 부',          'match': '무한의 부',          'cat': '자기계발', 'catCode': 'c', 'path': '자기계발 > 성공/처세 > 성공스토리', 'pid': 'S000214211407'},
+    # 2026-09-23 정식출간. 분야가 시/에세이라 catCode 가 다르다 — 여기 빠져 있어서
+    # 10/1 수집 때 우서전지 순위가 통째로 사라졌다. books 를 통째로 다시 쓰기 때문이다.
+    'pyoryu':  {'title': '우리는 서로의 전부이자 지옥이었다', 'match': '우리는 서로의 전부이자 지옥이었다',
+                'cat': '시/에세이', 'catCode': 'g', 'path': '시/에세이 > 나라별 에세이 > 한국에세이', 'pid': 'S000221144459'},
 }
 
 SURFACES = [
@@ -156,6 +160,25 @@ def collect():
     return out, meta
 
 
+def keep_weekly_best(new_books, old_books):
+    """상품 페이지에서 주간베스트를 못 읽었으면 **예전 값을 그대로 둔다.**
+
+    교보가 상품 페이지 마크업을 바꾸면 정규식이 빗나가 전부 None 이 된다. 그때 그대로 쓰면
+    어제까지 있던 '인문 23위'가 오늘 사라진다 — 순위가 떨어진 것처럼 읽힌다.
+    못 읽은 것과 순위 밖인 것은 다르다. 못 읽었으면 어제 값을 들고 있는 쪽이 덜 틀린다.
+    """
+    kept = 0
+    for k, nb in new_books.items():
+        wb = nb.get('weeklyBest') or {}
+        if wb.get('overall') is not None or wb.get('cat') is not None:
+            continue
+        ob = (old_books.get(k) or {}).get('weeklyBest')
+        if ob and (ob.get('overall') is not None or ob.get('cat') is not None):
+            nb['weeklyBest'] = dict(ob, stale=True)
+            kept += 1
+    return kept
+
+
 def stamp_try(src, html, s, e, ok, why):
     """수집을 시도했다는 사실 자체를 순위 블록에 남긴다.
 
@@ -221,9 +244,13 @@ def main():
     # 이전 hist 를 이어받는다 — 못 읽으면 새로 시작하되 그 사실을 찍는다
     hist = {}
     try:
-        hist = (json.loads(html[s + len(OPEN):e]) or {}).get('hist') or {}
+        prev = json.loads(html[s + len(OPEN):e]) or {}
+        hist = prev.get('hist') or {}
+        kept = keep_weekly_best(out, prev.get('books') or {})
+        if kept:
+            print('  주간베스트 %d권은 이번에 못 읽어 이전 값을 유지합니다' % kept)
     except Exception:
-        print('  (이전 hist 를 못 읽어 새로 시작합니다)')
+        print('  (이전 블록을 못 읽어 hist 를 새로 시작합니다)')
 
     a = payload['asOf']
     today = (a[0:4] + '-' + a[4:6] + '-' + a[6:8]) if (a and len(str(a)) == 8) else collected[:10]
