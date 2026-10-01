@@ -732,6 +732,12 @@ function slugDaily(slug){
   }
   return (SDC[slug] = out);
 }
+const PULLNOTE = '<p class="note"><b>「데려옴」</b>은 그 글을 올린 날과 이튿날에 이 채널 '
+  + '단축링크가 눌린 횟수입니다 — 조회수가 아니라 <b>책 페이지까지 온 사람</b>입니다. '
+  + '사람은 올라온 당일이나 이튿날에 누르고, 그 뒤는 다른 글의 몫과 섞여 가를 수 없습니다. '
+  + '「—」는 그날 클릭 자료가 없다는 뜻입니다. 볼라가 통계를 30일만 보관해서 '
+  + '2026-09-17 ~ 10-01 구간은 비어 있고, 10-01 부터 날마다 쌓입니다.</p>';
+
 /* 콘텐츠 하나가 데려온 클릭 — 올린 날과 그 다음 날, 그 채널 링크의 클릭 합.
    사람은 올라온 당일이나 이튿날에 누른다. 그 뒤는 다른 글의 몫과 섞여 가를 수 없다. */
 function pull(k, ch, ymd){
@@ -779,18 +785,23 @@ function igBlock(k, acc){
     const two = !x ? '<td>—</td><td>—</td>'
       : x[3] ? '<td colspan="2" class="muted" style="font-size:11.5px">릴스는 안 줍니다</td>'
              : '<td>'+nf(x[0])+'</td><td>'+nf(x[1])+'</td>';
+    const g = got(p);
     return '<tr><td>'+esc(kday(p[0]).slice(2))+'</td>'
       + '<td class="big">'+nf(p[3])+'</td><td>'+nf(p[4])+'</td><td>'+nf(p[5])+'</td><td>'+nf(p[6])+'</td>'
-      + two + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>'; };
+      + two + '<td class="'+(g&&g.n?'up':'muted')+'">'+(g ? nf(g.n) : '—')+'</td>'
+      + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>'; };
 
+  const got = p => pull(k, acc, kday(p[0]));
   const pane = list => !list.length ? '' :
-      strip(list.slice(0,10).map(p => ({
-        url:url(p), img:(TH.ig||{})[p[7]]||null, main:cmp(p[3])+' 조회',
-        sub:kday(p[0]).slice(2)+' · 저장 '+nf(p[5]), alt:label })))
+      strip(list.slice(0,10).map(p => { const g = got(p);
+        return {url:url(p), img:(TH.ig||{})[p[7]]||null, main:cmp(p[3])+' 조회',
+        sub:kday(p[0]).slice(2)+(g ? ' · 데려옴 '+nf(g.n) : ' · 저장 '+nf(p[5])),
+        alt:label }; }))
     + moreTable('게시물 하나하나 보기 — 조회 많은 순 ('+list.length+'건)',
         '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th>'
         + '<th>몇 명<span class="t2">도달</span></th><th>저장</th><th>공유</th>'
-        + '<th>링크<span class="t2">누름</span></th><th>프로필<span class="t2">방문</span></th><th>링크</th>',
+        + '<th>링크<span class="t2">누름</span></th><th>프로필<span class="t2">방문</span></th>'
+        + '<th>데려옴<span class="t2">올린날+1</span></th><th>링크</th>',
         list.slice(0,25).map(row), list.length);
   const recent = top.filter(p => kday(p[0]) >= SINCE14);
 
@@ -808,6 +819,7 @@ function igBlock(k, acc){
     + '</div>'
     + seg([{name:'최근 2주 ('+recent.length+')', html: pane(recent)},
             {name:'전체 ('+ps.length+')', html: pane(top)}])
+    + PULLNOTE
     + (META.igNote ? '<p class="note">'+esc(META.igNote)+'</p>' : '')
     + '</div>';
 }
@@ -817,20 +829,30 @@ function fbBlock(k){
   const ps = (D.books[k].fbPosts||[]).slice();
   if (!ps.length) return '';
   const views = sum(ps.map(p=>p[2])), reach = sum(ps.map(p=>p[1]));
+  /* 페북 커넥터가 2026-08-25 무렵부터 「도달」을 안 준다. 0 으로 받아 그대로 그리면
+     「본 사람 0명」이 되어 안 들어온 것과 아무도 안 본 것이 구별되지 않는다.
+     최근 글이 전부 0 이면 값이 죽은 것으로 본다 — 조회가 수만인데 도달이 0 일 수는 없다. */
+  const recentFb = ps.filter(p => kday(p[0]) >= SINCE14);
+  const reachDead = recentFb.length >= 3 && recentFb.every(p => !p[1]);
   const likes = sum(ps.map(p=>p[3])), shares = sum(ps.map(p=>p[5])), link = sum(ps.map(p=>p[6]));
   const top = ps.slice().sort((a,b)=>b[2]-a[2]);
   const url = p => 'https://www.facebook.com/reel/'+p[7]+'/';
-  const row = p =>
-    '<tr><td>'+esc(kday(p[0]).slice(2))+'</td><td class="big">'+nf(p[2])+'</td><td>'+nf(p[1])+'</td>'
+  const got = p => pull(k, 'F', kday(p[0]));
+  const row = p => { const g = got(p);
+    return '<tr><td>'+esc(kday(p[0]).slice(2))+'</td><td class="big">'+nf(p[2])+'</td>'
+    + '<td class="muted">'+(reachDead && !p[1] ? '—' : nf(p[1]))+'</td>'
     + '<td>'+nf(p[3])+'</td><td>'+nf(p[4])+'</td><td>'+nf(p[5])+'</td><td>'+nf(p[6])+'</td>'
-    + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>';
+    + '<td class="'+(g&&g.n?'up':'muted')+'">'+(g ? nf(g.n) : '—')+'</td>'
+    + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>'; };
   const pane = list => !list.length ? '' :
-      strip(list.slice(0,10).map(p => ({
-        url:url(p), img:(TH.fb||{})[p[7]]||null, main:cmp(p[2])+' 조회',
-        sub:kday(p[0]).slice(2)+' · 링크 '+nf(p[6]), alt:'페이스북 릴스' })))
+      strip(list.slice(0,10).map(p => { const g = got(p);
+        return {url:url(p), img:(TH.fb||{})[p[7]]||null, main:cmp(p[2])+' 조회',
+        sub:kday(p[0]).slice(2)+(g ? ' · 데려옴 '+nf(g.n) : ' · 링크 '+nf(p[6])),
+        alt:'페이스북 릴스' }; }))
     + moreTable('게시물 하나하나 보기 — 조회 많은 순 ('+list.length+'건)',
         '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th><th>몇 명<span class="t2">도달</span></th>'
-        + '<th>좋아요</th><th>댓글</th><th>공유</th><th>링크<span class="t2">누름</span></th><th>링크</th>',
+        + '<th>좋아요</th><th>댓글</th><th>공유</th><th>링크<span class="t2">누름</span></th>'
+        + '<th>데려옴<span class="t2">올린날+1</span></th><th>링크</th>',
         list.slice(0,25).map(row), list.length);
   const recent = top.filter(p => kday(p[0]) >= SINCE14);
 
@@ -839,7 +861,8 @@ function fbBlock(k){
       ps.length+'건 · 광고 아닌 우리 콘텐츠입니다'
       + (cl ? ' · 캡션 링크 <b>vo.la/'+esc(cl.slug)+'</b>' : ''))
     + '<div class="tiles">'
-    + tile('보여진 횟수', cmp(views)+'회', '본 사람 '+cmp(reach)+'명')
+    + tile('보여진 횟수', cmp(views)+'회',
+           reachDead ? '본 사람 수는 페북이 안 줍니다' : '본 사람 '+cmp(reach)+'명')
     + tile('좋아요', nf(likes)+'개', views?'조회 대비 '+pct(likes,views).toFixed(2)+'%':'—')
     + tile('공유', nf(shares)+'회', '')
     + clickTile(cl, views)
@@ -847,6 +870,7 @@ function fbBlock(k){
     + '</div>'
     + seg([{name:'최근 2주 ('+recent.length+')', html: pane(recent)},
             {name:'전체 ('+ps.length+')', html: pane(top)}])
+    + PULLNOTE
     + '</div>';
 }
 
@@ -859,18 +883,22 @@ function ytBlock(k){
   const vids = (b.videos||[]).slice();
   const vurl = v => 'https://www.youtube.com/'+(v[7]?'shorts/':'watch?v=')+v[0];
   const lag = YT.through && YT.asOf ? dayGap(YT.through, kday(YT.asOf)) : 0;
-  const row = v =>
-    '<tr><td>'+esc(String(v[2]).slice(2))+'</td><td class="big">'+nf(v[3])+'</td><td>'+nf(v[4])+'</td>'
+  const got = v => pull(k, 'Y', String(v[2]).slice(0,10));
+  const row = v => { const g = got(v);
+    return '<tr><td>'+esc(String(v[2]).slice(2))+'</td><td class="big">'+nf(v[3])+'</td><td>'+nf(v[4])+'</td>'
     + '<td>'+nf(v[5])+'</td><td>'+nf(v[6])+'</td>'
-    + '<td style="text-align:left"><a href="'+vurl(v)+'" target="_blank" rel="noopener">'+esc(v[1])+' ↗</a></td></tr>';
+    + '<td class="'+(g&&g.n?'up':'muted')+'">'+(g ? nf(g.n) : '—')+'</td>'
+    + '<td style="text-align:left"><a href="'+vurl(v)+'" target="_blank" rel="noopener">'+esc(v[1])+' ↗</a></td></tr>'; };
   const pane = list => !list.length ? '' :
-      strip(list.slice(0,10).map(v => ({
-        url:vurl(v), img:(TH.yt||{})[v[0]]||'https://i.ytimg.com/vi/'+v[0]+'/hqdefault.jpg',
-        main:cmp(v[3])+' 조회', sub:String(v[2]).slice(2)+' · 좋아요 '+nf(v[4]),
-        alt:String(v[1]).slice(0,24) })))
+      strip(list.slice(0,10).map(v => { const g = got(v);
+        return {url:vurl(v), img:(TH.yt||{})[v[0]]||'https://i.ytimg.com/vi/'+v[0]+'/hqdefault.jpg',
+        main:cmp(v[3])+' 조회',
+        sub:String(v[2]).slice(2)+(g ? ' · 데려옴 '+nf(g.n) : ' · 좋아요 '+nf(v[4])),
+        alt:String(v[1]).slice(0,24) }; }))
     + moreTable('영상 하나하나 보기 — 조회 많은 순 ('+list.length+'건)',
         '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th><th>좋아요</th><th>댓글</th>'
-        + '<th>저장</th><th>제목</th>', list.slice(0,25).map(row), list.length);
+        + '<th>저장</th><th>데려옴<span class="t2">올린날+1</span></th><th>제목</th>',
+        list.slice(0,25).map(row), list.length);
   const byView = vids.slice().sort((a,b)=>b[3]-a[3]);
   const recent = byView.filter(v => String(v[2]).slice(0,10) >= SINCE14);
 
@@ -892,6 +920,7 @@ function ytBlock(k){
         + '</div>' : '')
     + seg([{name:'최근 2주 ('+recent.length+')', html: pane(recent)},
             {name:'전체 ('+byView.length+')', html: pane(byView)}])
+    + PULLNOTE
     + '</div>';
 }
 
