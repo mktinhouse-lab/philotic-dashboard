@@ -65,10 +65,21 @@ def main():
 
         d = body.get('data') or {}
         for u in (d.get('urls') or []):
-            alias = u.get('alias')
+            # 사람이 볼라 화면에서 코드를 만들다 앞뒤에 공백을 흘리는 일이 있다
+            # (' jung5분yes'). 짧은주소는 다듬은 코드로 열리고 대시보드도 다듬은
+            # 코드로 들고 있으므로, 받을 때 다듬어 같은 링크가 두 줄로 갈라지지 않게 한다.
+            alias = (u.get('alias') or '').strip()
             if not alias:
                 continue
-            totals[alias] = int(u.get('clicks') or 0)
+            clicks = int(u.get('clicks') or 0)
+            if alias in totals:
+                # 공백만 다른 코드가 둘 있으면 합치지 말고 큰 쪽을 남긴다 — 어느 쪽이
+                # 진짜인지 모르는 채로 더하면 숫자가 부풀어 오른다.
+                print('공백만 다른 코드가 겹쳤다: %r (클릭 %d vs %d) — 큰 쪽을 쓴다'
+                      % (alias, totals[alias], clicks), file=sys.stderr)
+                if clicks <= totals[alias]:
+                    continue
+            totals[alias] = clicks
             meta[alias] = {'title': (u.get('title') or '').strip(),
                            'longurl': u.get('longurl') or '',
                            'date': u.get('date') or ''}
