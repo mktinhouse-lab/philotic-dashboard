@@ -149,7 +149,7 @@ tabs.innerHTML = '<button role="tab" data-k="sum" style="--bc:var(--accent)">요
   + D.order.map(k => '<button role="tab" data-k="'+k+'" style="--bc:'+BC[k]+'"><i></i>'
       + esc(D.books[k].short) + '</button>').join('')
   /* 협업은 남의 채널 성적이다. 도서 탭 안에 두면 우리 지표에 섞여 읽히므로 탭을 따로 판다. */
-  + (HAS_COLLAB ? '<button role="tab" data-k="collab" style="--bc:#7b5ea7"><i></i>협업 콘텐츠</button>' : '');
+  + (HAS_COLLAB ? '<button role="tab" data-k="collab" style="--bc:#7b5ea7"><i></i>외부 광고</button>' : '');
 tabs.querySelectorAll('button').forEach(b => b.onclick = () => select(b.dataset.k));
 
 /* ── 스파크라인 ── */
@@ -684,6 +684,55 @@ function adThumbStrip(k){
    게시물 [올린때, 계정, 유형, 조회, 도달, 저장, 공유, 코드] · igExtra [링크유입, 프로필방문, ·, 릴스여부] */
 /* 채널 하나가 물고 있는 볼라 링크. chan 이 책별로 채널→링크를 짝지어 둔다.
    이게 있어야 "이 채널 콘텐츠가 실제로 몇 명을 책 페이지로 보냈나"를 말할 수 있다. */
+/* ── 기간 가르개 ──
+   전체 기간 조회수로 줄을 세우면 조회가 쌓인 옛 글이 영원히 1등이라, 어제 올린 것이
+   잘 됐는지 알 수가 없다. 그래서 「최근 2주」를 기본으로 두고 전체는 눌러서 본다. */
+let SEGN = 0;
+function seg(panes){
+  /* 비어 있는 칸은 버린다 — 2주 동안 올린 게 없는데 「없습니다」만 뜨는 빈 칸이
+     기본으로 잡히면, 있는 자료마저 숨긴 꼴이 된다. 하나만 남으면 가르개도 안 세운다. */
+  panes = panes.filter(p => p && p.html);
+  if (!panes.length) return '';
+  if (panes.length === 1) return panes[0].html;
+  const id = 'sg' + (++SEGN);
+  return '<div class="segwrap" id="'+id+'">'
+    + '<div class="seg" role="tablist">' + panes.map((p,i) =>
+        '<button type="button" role="tab" data-i="'+i+'" aria-selected="'+(i===0)+'">'
+        + esc(p.name) + '</button>').join('') + '</div>'
+    + panes.map((p,i) => '<div class="segpane" data-i="'+i+'"'+(i?' hidden':'')+'>'+p.html+'</div>').join('')
+    + '</div>';
+}
+const WIN_DAYS = 14;
+const SINCE14 = new Date(Date.now() - WIN_DAYS*864e5).toISOString().slice(0,10);
+
+/* 짧은 링크 하나의 날짜별 클릭.
+   볼라 API 는 누적만 준다 — 날짜별 누적(totalHist)의 하루 차가 그날 클릭이다.
+   9/16 까지는 예전에 손으로 받아 둔 일별 자료(VL.daily)가 있어 그걸 먼저 쓴다. */
+const SDC = {};
+function slugDaily(slug){
+  if (SDC[slug]) return SDC[slug];
+  const out = Object.assign({}, (VL && VL.daily || {})[slug] || {});
+  const hist = (VL || {}).totalHist || {};
+  const days = Object.keys(hist).sort();
+  for (let i = 1; i < days.length; i++){
+    const a = hist[days[i-1]][slug], b = hist[days[i]][slug];
+    if (a == null || b == null) continue;
+    const d = b - a;
+    if (d >= 0) out[days[i]] = d;        // 줄었으면 통계 초기화다 — 그 날은 비운다
+  }
+  return (SDC[slug] = out);
+}
+/* 콘텐츠 하나가 데려온 클릭 — 올린 날과 그 다음 날, 그 채널 링크의 클릭 합.
+   사람은 올라온 당일이나 이튿날에 누른다. 그 뒤는 다른 글의 몫과 섞여 가를 수 없다. */
+function pull(k, ch, ymd){
+  const cl = chanLink(k, ch);
+  if (!cl) return null;
+  const day = slugDaily(cl.slug);
+  const d1 = ymd, d2 = new Date(new Date(ymd).getTime() + 864e5).toISOString().slice(0,10);
+  if (day[d1] == null && day[d2] == null) return null;
+  return {n: (day[d1]||0) + (day[d2]||0), slug: cl.slug};
+}
+
 function chanLink(k, ch){
   const slug = ((VL && VL.chan && VL.chan[k]) || {})[ch];
   if (!slug || !VL) return null;
@@ -715,14 +764,25 @@ function igBlock(k, acc){
   const top = ps.slice().sort((a,b)=>b[3]-a[3]);
   const url = p => 'https://www.instagram.com/p/'+p[7]+'/';
 
-  const rows = top.slice(0,25).map(p => {
+  const row = p => {
     const x = IGX[p[7]];
     const two = !x ? '<td>—</td><td>—</td>'
       : x[3] ? '<td colspan="2" class="muted" style="font-size:11.5px">릴스는 안 줍니다</td>'
              : '<td>'+nf(x[0])+'</td><td>'+nf(x[1])+'</td>';
     return '<tr><td>'+esc(kday(p[0]).slice(2))+'</td>'
       + '<td class="big">'+nf(p[3])+'</td><td>'+nf(p[4])+'</td><td>'+nf(p[5])+'</td><td>'+nf(p[6])+'</td>'
-      + two + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>'; });
+      + two + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>'; };
+
+  const pane = list => !list.length ? '' :
+      strip(list.slice(0,10).map(p => ({
+        url:url(p), img:(TH.ig||{})[p[7]]||null, main:cmp(p[3])+' 조회',
+        sub:kday(p[0]).slice(2)+' · 저장 '+nf(p[5]), alt:label })))
+    + moreTable('게시물 하나하나 보기 — 조회 많은 순 ('+list.length+'건)',
+        '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th>'
+        + '<th>몇 명<span class="t2">도달</span></th><th>저장</th><th>공유</th>'
+        + '<th>링크<span class="t2">누름</span></th><th>프로필<span class="t2">방문</span></th><th>링크</th>',
+        list.slice(0,25).map(row), list.length);
+  const recent = top.filter(p => kday(p[0]) >= SINCE14);
 
   return '<div class="sec">' + sech(label + ' — 인스타그램',
       ps.length + '건 · 광고 아닌 우리 콘텐츠입니다'
@@ -736,14 +796,8 @@ function igBlock(k, acc){
     + (link ? tile('게시물 링크 클릭', nf(link)+'회', '게시물에 직접 건 링크') : '')
     + (foll ? tile('새 팔로우', nf(foll)+'명', esc(IGF.asOf)+' 기준 · 앱에서 옮긴 값') : '')
     + '</div>'
-    + strip(top.slice(0,10).map(p => ({
-        url:url(p), img:(TH.ig||{})[p[7]]||null, main:cmp(p[3])+' 조회',
-        sub:kday(p[0]).slice(2)+' · 저장 '+nf(p[5]), alt:label })))
-    + moreTable('게시물 하나하나 보기 — 조회 많은 순 ('+ps.length+'건)',
-        '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th>'
-        + '<th>몇 명<span class="t2">도달</span></th><th>저장</th><th>공유</th>'
-        + '<th>링크<span class="t2">누름</span></th><th>프로필<span class="t2">방문</span></th><th>링크</th>',
-        rows, ps.length)
+    + seg([{name:'최근 2주 ('+recent.length+')', html: pane(recent)},
+            {name:'전체 ('+ps.length+')', html: pane(top)}])
     + (META.igNote ? '<p class="note">'+esc(META.igNote)+'</p>' : '')
     + '</div>';
 }
@@ -756,11 +810,19 @@ function fbBlock(k){
   const likes = sum(ps.map(p=>p[3])), shares = sum(ps.map(p=>p[5])), link = sum(ps.map(p=>p[6]));
   const top = ps.slice().sort((a,b)=>b[2]-a[2]);
   const url = p => 'https://www.facebook.com/reel/'+p[7]+'/';
-  const rows = top.slice(0,25).map(p =>
+  const row = p =>
     '<tr><td>'+esc(kday(p[0]).slice(2))+'</td><td class="big">'+nf(p[2])+'</td><td>'+nf(p[1])+'</td>'
     + '<td>'+nf(p[3])+'</td><td>'+nf(p[4])+'</td><td>'+nf(p[5])+'</td><td>'+nf(p[6])+'</td>'
-    + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>');
-  const byLink = ps.filter(p=>p[6]>0).sort((a,b)=>b[6]-a[6]).slice(0,10);
+    + '<td style="text-align:left"><a href="'+url(p)+'" target="_blank" rel="noopener">열기 ↗</a></td></tr>';
+  const pane = list => !list.length ? '' :
+      strip(list.slice(0,10).map(p => ({
+        url:url(p), img:(TH.fb||{})[p[7]]||null, main:cmp(p[2])+' 조회',
+        sub:kday(p[0]).slice(2)+' · 링크 '+nf(p[6]), alt:'페이스북 릴스' })))
+    + moreTable('게시물 하나하나 보기 — 조회 많은 순 ('+list.length+'건)',
+        '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th><th>몇 명<span class="t2">도달</span></th>'
+        + '<th>좋아요</th><th>댓글</th><th>공유</th><th>링크<span class="t2">누름</span></th><th>링크</th>',
+        list.slice(0,25).map(row), list.length);
+  const recent = top.filter(p => kday(p[0]) >= SINCE14);
 
   const cl = chanLink(k, 'F');
   return '<div class="sec">' + sech(esc(META.fbPage||'페이스북')+' — 페이스북',
@@ -773,14 +835,8 @@ function fbBlock(k){
     + clickTile(cl, views)
     + tile('게시물 링크 클릭', nf(link)+'회', views?'조회 대비 '+pct(link,views).toFixed(3)+'%':'—')
     + '</div>'
-    + strip((byLink.length?byLink:top.slice(0,10)).map(p => ({
-        url:url(p), img:(TH.fb||{})[p[7]]||null,
-        main:(byLink.length?nf(p[6])+' 링크 누름':cmp(p[2])+' 조회'),
-        sub:kday(p[0]).slice(2)+' · 조회 '+cmp(p[2]), alt:'페이스북 릴스' })))
-    + moreTable('게시물 하나하나 보기 — 조회 많은 순 ('+ps.length+'건)',
-        '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th><th>몇 명<span class="t2">도달</span></th>'
-        + '<th>좋아요</th><th>댓글</th><th>공유</th><th>링크<span class="t2">누름</span></th><th>링크</th>',
-        rows, ps.length)
+    + seg([{name:'최근 2주 ('+recent.length+')', html: pane(recent)},
+            {name:'전체 ('+ps.length+')', html: pane(top)}])
     + '</div>';
 }
 
@@ -793,10 +849,20 @@ function ytBlock(k){
   const vids = (b.videos||[]).slice();
   const vurl = v => 'https://www.youtube.com/'+(v[7]?'shorts/':'watch?v=')+v[0];
   const lag = YT.through && YT.asOf ? dayGap(YT.through, kday(YT.asOf)) : 0;
-  const rows = vids.slice(0,25).map(v =>
+  const row = v =>
     '<tr><td>'+esc(String(v[2]).slice(2))+'</td><td class="big">'+nf(v[3])+'</td><td>'+nf(v[4])+'</td>'
     + '<td>'+nf(v[5])+'</td><td>'+nf(v[6])+'</td>'
-    + '<td style="text-align:left"><a href="'+vurl(v)+'" target="_blank" rel="noopener">'+esc(v[1])+' ↗</a></td></tr>');
+    + '<td style="text-align:left"><a href="'+vurl(v)+'" target="_blank" rel="noopener">'+esc(v[1])+' ↗</a></td></tr>';
+  const pane = list => !list.length ? '' :
+      strip(list.slice(0,10).map(v => ({
+        url:vurl(v), img:(TH.yt||{})[v[0]]||'https://i.ytimg.com/vi/'+v[0]+'/hqdefault.jpg',
+        main:cmp(v[3])+' 조회', sub:String(v[2]).slice(2)+' · 좋아요 '+nf(v[4]),
+        alt:String(v[1]).slice(0,24) })))
+    + moreTable('영상 하나하나 보기 — 조회 많은 순 ('+list.length+'건)',
+        '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th><th>좋아요</th><th>댓글</th>'
+        + '<th>저장</th><th>제목</th>', list.slice(0,25).map(row), list.length);
+  const byView = vids.slice().sort((a,b)=>b[3]-a[3]);
+  const recent = byView.filter(v => String(v[2]).slice(0,10) >= SINCE14);
 
   const cl = chanLink(k, 'Y');
   return '<div class="sec">' + sech((YT.ch?esc(YT.ch.title):'유튜브')+' — 유튜브',
@@ -814,12 +880,8 @@ function ytBlock(k){
         + '<span><i style="background:'+CHC.Y+'"></i>날마다 조회수</span></div>'
         + stackChart(days, [{name:'유튜브', c:CHC.Y, vals:days.map(d=>(b.daily[d]||[0])[0]||0)}], {h:200})
         + '</div>' : '')
-    + strip(vids.slice(0,10).map(v => ({
-        url:vurl(v), img:(TH.yt||{})[v[0]]||'https://i.ytimg.com/vi/'+v[0]+'/hqdefault.jpg',
-        main:cmp(v[3])+' 조회', sub:String(v[2]).slice(2)+' · 좋아요 '+nf(v[4]), alt:String(v[1]).slice(0,24) })))
-    + moreTable('영상 하나하나 보기 — 조회 많은 순 ('+vids.length+'건)',
-        '<th>올린 날</th><th>몇 번<span class="t2">조회</span></th><th>좋아요</th><th>댓글</th>'
-        + '<th>저장</th><th>제목</th>', rows, vids.length)
+    + seg([{name:'최근 2주 ('+recent.length+')', html: pane(recent)},
+            {name:'전체 ('+byView.length+')', html: pane(byView)}])
     + '</div>';
 }
 
@@ -928,48 +990,77 @@ function chanSummaryBlock(k){
 /* ── 다른 채널과 한 협업·협찬 영상 ──
    우리 채널이 아니라 남의 채널에 나간 것이라, 조회수보다 **거기서 우리 책 페이지로 몇 명이
    넘어왔는지**가 본론이다. 그래서 링크별 클릭을 같이 놓는다. */
+/* ── 외부 광고 영상 ──
+   유튜버에게 돈을 주고 맡긴 영상이다. 우리 채널이 아니므로 조회수는 그 채널 것이고,
+   우리 몫은 **거기서 책 페이지로 넘어온 사람 수**뿐이다. 그래서 클릭을 본론으로 둔다.
+   영상마다 book 을 달 수 있고, 없으면 블록 전체의 book 을 쓴다(옛 자료 호환). */
+function adVideoCard(v){
+  const cl = sum((v.links||[]).map(l => l[2]));
+  const links = (v.links||[]).filter(l=>l[2]>0).sort((a,b)=>b[2]-a[2]);
+  const thumb = v.thumb || 'https://i.ytimg.com/vi/'+v.id+'/hqdefault.jpg';
+  return '<div class="adv">'
+    + '<div class="advplay" data-yt="'+esc(v.id)+'" role="button" tabindex="0" '
+    +      'aria-label="영상 재생">'
+    +   '<img src="'+thumb+'" alt="" loading="lazy">'
+    +   '<span class="pbtn" aria-hidden="true">▶</span>'
+    +   (v.dur ? '<span class="dur">'+esc(v.dur)+'</span>' : '')
+    + '</div>'
+    + '<div class="advmain">'
+    +   '<div class="advch"><b>'+esc(v.ch)+'</b>'
+    +   (v.badge ? ' <span class="advbadge">'+esc(v.badge)+'</span>' : '')
+    +   ' · '+esc(String(v.up||'').slice(0,10))+'</div>'
+    +   '<div class="advtitle"><a href="https://www.youtube.com/watch?v='+esc(v.id)+'" '
+    +     'target="_blank" rel="noopener">'+esc(v.title)+' ↗</a></div>'
+    +   '<div class="advnum">'
+    +     '<span><i>조회</i><b>'+cmp(v.views)+'</b></span>'
+    +     '<span><i>좋아요</i><b>'+nf(v.likes)+'</b></span>'
+    +     '<span><i>댓글</i><b>'+nf(v.comments)+'</b></span>'
+    +     '<span><i>넘어온 사람</i><b class="'+(cl?'up':'')+'">'+nf(cl)+'명</b></span>'
+    +     (v.views && cl ? '<span><i>조회 대비</i><b>'+pct(cl,v.views).toFixed(3)+'%</b></span>' : '')
+    +   '</div>'
+    +   (links.length ? '<div class="mixkey" style="margin-top:8px">' + links.map(l =>
+          '<span>'+esc(l[1])+' <b>'+nf(l[2])+'</b></span>').join('') + '</div>'
+        : '<p class="note" style="margin:8px 0 0">짧은 링크를 아직 안 붙였습니다 — '
+          + '붙이면 이 영상이 몇 명을 데려왔는지 셀 수 있습니다.</p>')
+    +   (v.warn ? '<p class="note" style="margin-top:8px">'+esc(v.warn)+'</p>' : '')
+    + '</div></div>';
+}
 function collabBlock(k){
   const C = D.ytCollab;
-  if (!C || (k !== 'all' && C.book !== k)) return '';
-  const vids = C.videos || [], soon = C.upcoming || [];
+  if (!C) return '';
+  const bookOf = v => v.book || C.book;
+  const vids = (C.videos || []).filter(v => k === 'all' || bookOf(v) === k);
+  const soon = (C.upcoming || []).filter(u => k === 'all' || (u.book || C.book) === k);
   if (!vids.length && !soon.length) return '';
-  const bk = D.books[C.book];
   const clicksOf = v => sum((v.links||[]).map(l => l[2]));
 
-  let h = '<div class="sec">' + sech('다른 채널 협업 영상',
-      (bk ? esc(bk.short)+' · ' : '') + '남의 채널에 나간 것 · 조회수보다 **넘어온 사람 수**가 본론입니다'
-        .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'),
+  let h = '<div class="sec">' + sech('외부 광고 영상',
+      '유튜버에게 맡긴 것 · 조회수는 그 채널 몫이고 <b>넘어온 사람 수</b>가 우리 몫입니다',
       C.asOf ? esc(String(C.asOf).slice(0,10))+' 기준' : '');
 
   if (vids.length){
     h += '<div class="tiles">'
-      + tile('나간 영상', nf(vids.length)+'건', vids.map(v=>v.ch).filter((x,i,a)=>a.indexOf(x)===i).join(' · '))
-      + tile('합쳐서 조회', cmp(sum(vids.map(v=>v.views)))+'회', '')
-      + tile('책 페이지로 넘어옴', nf(sum(vids.map(clicksOf)))+'회', '짧은 링크 클릭 합계')
-      + '</div>'
-      + vids.map(v => {
-          const cl = clicksOf(v);
-          const links = (v.links||[]).filter(l=>l[2]>0).sort((a,b)=>b[2]-a[2]);
-          return '<div class="panel" style="padding:14px 16px;margin-bottom:12px">'
-            + '<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">'
-            + (v.thumb ? '<img src="'+v.thumb+'" alt="" loading="lazy" '
-                + 'style="width:148px;aspect-ratio:16/9;object-fit:cover;border-radius:9px;flex:none">' : '')
-            + '<div style="flex:1;min-width:200px">'
-            +   '<div style="font-size:12px;color:var(--ink2)"><b style="color:var(--ink)">'+esc(v.ch)+'</b>'
-            +   (v.badge ? ' <span class="badge-x" style="font-size:10.5px;border:1px solid var(--rule);'
-                  + 'border-radius:999px;padding:1px 7px;color:var(--warn)">'+esc(v.badge)+'</span>' : '')
-            +   ' · '+esc(String(v.up||'').slice(0,10))+(v.dur?' · '+esc(v.dur):'')+'</div>'
-            +   '<div style="font-size:13.5px;font-weight:600;margin:5px 0 7px;line-height:1.45">'
-            +     '<a href="https://www.youtube.com/watch?v='+esc(v.id)+'" target="_blank" rel="noopener">'
-            +     esc(v.title)+' ↗</a></div>'
-            +   '<div style="font-size:12.5px;color:var(--ink2)">조회 <b style="color:var(--ink)">'+cmp(v.views)
-            +     '</b>회 · 좋아요 '+nf(v.likes)+' · 댓글 '+nf(v.comments)
-            +     ' · <b style="color:var(--ink)">넘어온 사람 '+nf(cl)+'명</b>'
-            +     (v.views?' (조회 대비 '+pct(cl,v.views).toFixed(3)+'%)':'')+'</div>'
-            +   (links.length ? '<div class="mixkey" style="margin-top:8px">' + links.map(l =>
-                    '<span>'+esc(l[1])+' <b>'+nf(l[2])+'</b></span>').join('') + '</div>' : '')
-            +   (v.warn ? '<p class="note" style="margin-top:8px">'+esc(v.warn)+'</p>' : '')
-            + '</div></div></div>'; }).join('');
+      + tile('맡긴 영상', nf(vids.length)+'건',
+             vids.map(v=>v.ch).filter((x,i,a)=>a.indexOf(x)===i).join(' · '))
+      + tile('합쳐서 조회', cmp(sum(vids.map(v=>v.views)))+'회', '남의 채널에서 난 조회수')
+      + tile('책 페이지로 넘어옴', nf(sum(vids.map(clicksOf)))+'명', '짧은 링크 클릭 합계')
+      + '</div>';
+
+    /* 책별로 갈라 놓는다. 한 책만 보는 탭에서는 제목을 또 달 필요가 없다. */
+    const byBook = {};
+    vids.forEach(v => { (byBook[bookOf(v)] = byBook[bookOf(v)] || []).push(v); });
+    const order = Object.keys(byBook).sort((a,b) =>
+        sum(byBook[b].map(clicksOf)) - sum(byBook[a].map(clicksOf)));
+    h += order.map(bk => {
+      const mine = byBook[bk].slice().sort((a,b) => clicksOf(b) - clicksOf(a));
+      const head = (k === 'all' && D.books[bk])
+        ? '<p class="note" style="margin:18px 0 10px">'
+          + '<i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'
+          + (BC[bk]||'#8a94a3')+';margin-right:7px"></i><b>'+esc(D.books[bk].short)+'</b> · '
+          + mine.length+'건 · 넘어온 사람 '+nf(sum(mine.map(clicksOf)))+'명</p>'
+        : '';
+      return head + mine.map(adVideoCard).join('');
+    }).join('');
   }
   if (soon.length){
     h += '<p class="note" style="margin:16px 0 8px"><b>올라올 예정</b></p>'
@@ -1073,8 +1164,8 @@ function econBlock(){
     + '</div></div>';
 }
 
-/* ══ 협업 콘텐츠 탭 ══
-   남의 채널에 나간 것이라 조회수는 그 채널 것이지 우리 것이 아니다.
+/* ══ 외부 광고 탭 ══
+   유튜버에게 돈을 주고 맡긴 영상이다. 조회수는 그 채널 것이지 우리 것이 아니다.
    우리 쪽 성과는 **거기서 책 페이지로 몇 명이 넘어왔나** 하나뿐이다. 그래서 그 숫자를 앞에 세운다.
    링크를 안 붙이고 설명란에 서점 주소를 바로 건 영상은 아예 셀 수 없다 — 그것도 그대로 적는다. */
 function selectCollab(){
@@ -1088,10 +1179,10 @@ function selectCollab(){
   const bk = D.books[C.book];
 
   document.getElementById('kpis').innerHTML =
-      kpi('나간 영상', 'COLLAB VIDEOS', nf(vids.length), '건',
+      kpi('맡긴 영상', 'PAID VIDEOS', nf(vids.length), '건',
           vids.map(v=>esc(v.ch)).join(' · '))
-    + kpi('협업 채널 조회', 'VIEWS', cmp(views), '회',
-          '우리 채널이 아니라 <b>협업 채널</b>에서 난 조회수입니다')
+    + kpi('그 채널 조회', 'VIEWS', cmp(views), '회',
+          '우리 채널이 아니라 <b>맡긴 채널</b>에서 난 조회수입니다')
     + kpi('책 페이지 유입', 'CLICKED THROUGH', nf(clicks), '명',
           mViews ? '측정 가능한 '+cmp(mViews)+'회 중 <b>'+pct(clicks,mViews).toFixed(3)+'%</b>'
                  : '링크가 붙은 영상이 없습니다')
@@ -1099,58 +1190,12 @@ function selectCollab(){
           soon.length ? esc(soon.map(u=>u.ch).join(' · ')) : '잡힌 일정 없음');
 
   document.getElementById('kpiNote').innerHTML =
-      '<b>협업 영상은 조회수로 평가하면 안 됩니다.</b> 그 조회수는 그 채널의 것이고, 우리가 얻은 건 '
+      '<b>맡긴 영상은 조회수로 평가하면 안 됩니다.</b> 그 조회수는 그 채널의 것이고, 우리가 얻은 건 '
     + '거기서 <b>책 페이지까지 넘어온 사람</b>뿐입니다. 그래서 영상마다 서점별 단축링크를 걸어 두고 '
     + '그 클릭을 셉니다. 링크 없이 설명란에 서점 주소를 바로 건 영상은 <b>한 명도 셀 수 없습니다</b>.';
 
-  let h = '<div class="sec">' + sech('협업 영상',
-      (bk ? esc(bk.title||bk.short)+' · ' : '') + '조회 많은 순',
-      C.asOf ? esc(String(C.asOf).slice(0,10))+' 기준' : '')
-    + vids.map(v => {
-        const cl = clicksOf(v), links = (v.links||[]).slice().sort((a,b)=>b[2]-a[2]);
-        const dead = !links.length;
-        return '<div class="panel" style="padding:15px 17px;margin-bottom:12px">'
-          + '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'
-          + (v.thumb ? '<img src="'+v.thumb+'" alt="" loading="lazy" '
-              + 'style="width:190px;aspect-ratio:16/9;object-fit:cover;border-radius:10px;flex:none">' : '')
-          + '<div style="flex:1;min-width:230px">'
-          +   '<div style="font-size:12.5px;color:var(--ink2)"><b style="color:var(--ink)">'+esc(v.ch)+'</b>'
-          +   (v.badge ? ' <span style="font-size:10.5px;border:1px solid var(--rule);border-radius:999px;'
-                + 'padding:1px 7px;color:var(--warn)">'+esc(v.badge)+'</span>' : '')
-          +   ' · '+esc(String(v.up||'').slice(0,10))+(v.dur?' · '+esc(v.dur):'')+'</div>'
-          +   '<div style="font-size:14px;font-weight:600;margin:6px 0 9px;line-height:1.45">'
-          +     '<a href="https://www.youtube.com/watch?v='+esc(v.id)+'" target="_blank" rel="noopener">'
-          +     esc(v.title)+' ↗</a></div>'
-          +   '<div class="tiles" style="margin:0 0 10px">'
-          +     tile('그 채널 조회', cmp(v.views)+'회', '좋아요 '+nf(v.likes)+' · 댓글 '+nf(v.comments))
-          +     tile('책 페이지로 넘어옴', dead ? '셀 수 없음' : nf(cl)+'명',
-                     dead ? '링크를 안 걸었습니다'
-                          : (v.views ? '조회 대비 '+pct(cl,v.views).toFixed(3)+'%' : ''))
-          +   '</div>'
-          +   (links.length ? '<div class="mixkey">' + links.map(l =>
-                  '<span>'+esc(l[1])+' <b>'+nf(l[2])+'</b>'
-                  + (l[3]===false ? ' <span class="muted">(안 걸림)</span>' : '')+'</span>').join('')
-                + '</div>' : '')
-          +   (v.warn ? '<p class="note" style="margin-top:9px">'+esc(v.warn)+'</p>' : '')
-          + '</div></div></div>'; }).join('')
-    + '</div>';
+  const h = collabBlock('all');
 
-  if (soon.length){
-    h += '<div class="sec">' + sech('업로드 예정', '링크를 미리 걸어 두면 올라간 뒤 바로 셀 수 있습니다')
-      + '<div class="panel scroll"><table><thead><tr><th>채널</th><th>언제</th>'
-      + '<th>걸어 둔 링크</th><th>지금까지 클릭</th></tr></thead><tbody>'
-      + soon.map(u => {
-          const c = sum((u.links||[]).map(l=>l[2]));
-          return '<tr><td>'+esc(u.ch)+'</td>'
-            + '<td>'+esc(u.at||'')+(u.time?' '+esc(u.time):'')+'</td>'
-            + '<td style="text-align:left">'+((u.links||[]).map(l=>esc(l[1])).join(' · ')||'<span class="muted">없음</span>')+'</td>'
-            + '<td class="big">'+nf(c)+'</td></tr>'; }).join('')
-      + '</tbody></table></div>'
-      + '<p class="note">예정일이 지났는데 클릭이 <b>한 자릿수</b>면 실제로 안 올라갔거나 '
-      + '링크가 영상에 안 붙은 것입니다 — 채널에 확인해 보셔야 합니다.</p></div>';
-  }
-
-  h += freshBlock();
   document.getElementById('view').innerHTML = h;
   layout();
   scrollTo({top:0, behavior:'smooth'});
@@ -1593,7 +1638,7 @@ const CATS = [
   {id:'ad',      name:'광고',         keys:['광고 집행','광고 나간 곳','광고 소재별 성적']},
   {id:'organic', name:'우리 콘텐츠',  keys:['채널별 유입','유튜브 채널'],
    match:t => / — (인스타그램|페이스북|유튜브)$/.test(t)},
-  {id:'collab',  name:'협업',          keys:['협업 영상','업로드 예정']},
+  {id:'collab',  name:'외부 광고',     keys:['외부 광고 영상','업로드 예정']},
   {id:'traffic', name:'유입 경로',    keys:['링크 클릭']},
   {id:'base',    name:'기준 · 자료',  keys:['계산 기준','데이터 현황','말 풀이']},
 ];
@@ -1605,7 +1650,7 @@ const OPEN_BY_DEFAULT = new Set([
   '이번 주 요약','책별 현황','일별 판매',
   '교보문고 등수','교보 바로펀딩',
   '광고 집행','채널별 유입','경로별 유입',
-  '협업 영상','데이터 현황']);
+  '외부 광고 영상','데이터 현황']);
 
 const LS = 'philotic-v2-open';
 const readOpen = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch(e){ return {}; } };
@@ -1711,6 +1756,33 @@ document.getElementById('asofAds').textContent   = ADASOF.slice(5).replace('-','
 document.getElementById('footNote').innerHTML =
     '판매는 구글시트 <b>필로틱 출판 판매데이터</b>의 서점 원천 자료, 광고는 메타 광고계정 '
   + esc(D.account) + '의 도서별 실적입니다. 반품이 있는 날은 합계에서 빼고, 막대에는 그리지 않습니다.';
+
+/* 외부 광고 영상 재생 — 눌러야 불러온다. 처음부터 iframe 을 깔면 영상 수만큼
+   유튜브에 붙어 화면이 느려지고, 보지도 않은 재생까지 집계된다. */
+document.addEventListener('click', e => {
+  const p = e.target.closest('.advplay');
+  if (!p || p.dataset.on) return;
+  const id = p.dataset.yt;
+  p.dataset.on = '1';
+  p.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + id
+    + '?autoplay=1&rel=0" title="영상" frameborder="0" allow="autoplay; encrypted-media; '
+    + 'picture-in-picture" allowfullscreen></iframe>';
+});
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('advplay')){
+    e.preventDefault(); e.target.click();
+  }
+});
+
+/* 기간 가르개 누름 — 화면을 다시 그릴 때마다 붙이지 않도록 한 번만 건다 */
+document.addEventListener('click', e => {
+  const b = e.target.closest('.seg button');
+  if (!b) return;
+  const wrap = b.closest('.segwrap'), i = b.dataset.i;
+  wrap.querySelectorAll(':scope > .seg button').forEach(x =>
+    x.setAttribute('aria-selected', String(x.dataset.i === i)));
+  wrap.querySelectorAll(':scope > .segpane').forEach(x => { x.hidden = x.dataset.i !== i; });
+});
 
 /* 모두 펴기 / 접기 */
 const ab = document.getElementById('allBtn');

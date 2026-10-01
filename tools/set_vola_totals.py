@@ -19,6 +19,7 @@ totals.json 모양:
 import json, re, sys, datetime
 
 BLOCK = 'volaDaily'
+KEEP_DAYS = 180          # 날짜별 누적을 몇 날치까지 들고 있을지 — 반년이면 넉넉하다
 
 
 def find_block(html, name):
@@ -87,6 +88,15 @@ def main():
 
     d['totalAsOf'] = as_of
     d['collected'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+
+    # 날짜별 누적을 쌓는다. 볼라 API 는 누적만 주고 일별을 안 준다 —
+    # 어제 누적과 오늘 누적의 차가 곧 그날 클릭이다. 화면은 그걸로 그린다.
+    # 볼라 자신도 통계를 30일만 보관하므로, 여기 쌓이는 게 유일한 과거 기록이 된다.
+    hist = d.setdefault('totalHist', {})
+    hist[as_of] = dict(totals)
+    for day in sorted(hist)[:-KEEP_DAYS]:          # 오래된 것부터 버린다
+        del hist[day]
+    d['histDays'] = len(hist)
 
     enc = json.dumps(d, ensure_ascii=False, separators=(',', ':'))
     enc = enc.replace('</script', r'<\/script')          # 블록이 일찍 끝나지 않도록
