@@ -12,7 +12,7 @@
 hist(순위 추이)는 교보가 과거를 안 주므로 우리가 매일 쌓는다.
 날짜 키는 '수집한 날'이 아니라 '집계 기준일'(온라인 일간의 ymw)이다 — 화면에서 "8/23 몇 위"로 읽히려면 그래야 한다.
 """
-import sys, json, re, gzip, zlib, urllib.request, urllib.parse, datetime
+import sys, os, json, re, gzip, zlib, http.client, urllib.request, urllib.parse, datetime
 
 API_KEY = ('eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..SAuG7hzFxwWfewcz.gMw0bGwwgB9Xx8Wxz-Y6ihk4IMgSa-5CM-'
            'ZzIdfRNQbqMbvLUmv5-9sRubZjE-iJ-wNPlNbpFnHprd3aMGDrJGqCkUNz3AkvR24a6S18-9PUCOySLlK296YlQwyHKRLDprH1Atq8'
@@ -115,7 +115,88 @@ def sweep(sf, targets, q):
     return found, ymw
 
 
-WB = re.compile(r'<span>([^<>]{1,20})<!--\s*-->\s*<span>([\d,]+)</span>위</span>')
+PRODUCT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36'
+
+
+def get_product(pid, timeout=25):
+    """상품 상세 페이지를 글자로 돌려준다 — **헤더 이름을 전부 소문자로** 보내서.
+
+    교보 상품 페이지는 이제 referer 가 없으면 본문을 안 준다. 상태는 200 인데 본문이 0바이트로
+    오고 CloudFront 가 'x-cache: Error from cloudfront' 를 붙인다. 더 고약한 건 referer 를
+    **소문자 이름으로** 보내야 통한다는 점이다 — 'Referer:' 로 보내면 똑같이 빈 본문이다.
+    (accept-encoding 은 대문자여도 통하니 중간 경로 문제가 아니라 교보 쪽 판정이다.)
+
+    urllib 은 보내는 헤더 이름을 전부 .title() 해 버리므로 'referer' 를 넣어도 'Referer' 로
+    나간다. 그래서 이 한 요청만 http.client 로 직접 띄운다 — putheader 는 대소문자를 보존한다.
+    표준 라이브러리만 쓴다는 원칙은 그대로다.
+    """
+    host, path = 'product.kyobobook.co.kr', '/detail/' + pid
+    proxy = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')
+    if proxy:
+        pu = urllib.parse.urlsplit(proxy if '://' in proxy else 'http://' + proxy)
+        conn = http.client.HTTPSConnection(pu.hostname, pu.port or (443 if pu.scheme == 'https' else 80), timeout=timeout)
+        conn.set_tunnel(host, 443)
+    else:
+        conn = http.client.HTTPSConnection(host, 443, timeout=timeout)
+    try:
+        # skip_host / skip_accept_encoding: http.client 이 제목꼴로 끼워 넣는 걸 막고 직접 쓴다
+        conn.putrequest('GET', path, skip_host=True, skip_accept_encoding=True)
+        for k, v in (('host', host),
+                     ('user-agent', PRODUCT_UA),
+                     ('accept', 'text/html,application/xhtml+xml,*/*;q=0.8'),
+                     ('accept-language', 'ko-KR,ko;q=0.9'),
+                     ('accept-encoding', 'gzip, deflate'),
+                     ('referer', 'https://search.kyobobook.co.kr/'),
+                     ('connection', 'close')):
+            conn.putheader(k, v)
+        conn.endheaders()
+        r = conn.getresponse()
+        raw = r.read()
+        enc = (r.headers.get('content-encoding') or '').lower()
+        status = r.status
+    finally:
+        conn.close()
+    if enc == 'gzip' or raw[:2] == b'\x1f\x8b':
+        raw = gzip.decompress(raw)
+    elif enc == 'deflate':
+        try:
+            raw = zlib.decompress(raw)
+        except zlib.error:
+            raw = zlib.decompress(raw, -zlib.MAX_WBITS)
+    if not raw:
+        raise RuntimeError('상품 페이지 본문이 비어 있습니다 (HTTP %s) — 교보가 요청을 거른 것으로 보입니다' % status)
+    return status, raw.decode('utf-8', 'replace')
+
+
+# 「주간베스트 · 국내도서 30위 | 시/에세이 4위」 배지.
+# 현재 마크업은 <span>국내도서<!-- --> <span>30</span>위</span> 꼴이지만, class 이름도
+# React 주석(<!-- -->)도 띄어쓰기도 교보가 수시로 바꾼다. 그래서 class 에는 전혀 기대지 않고
+# '분야이름 + 숫자 + 위' 라는 글자 모양만으로 잡는다. 태그 사이 공백·줄바꿈은 전부 흘려보내고,
+# 주석은 있어도 없어도 되게 둔다.
+WB = re.compile(
+    r'<span[^>]*>\s*([^<>]{1,20}?)\s*(?:<!--.*?-->)?\s*'
+    r'<span[^>]*>\s*([\d,]+)\s*</\s*span\s*>\s*위',
+    re.S)
+
+
+def parse_weekly_best(html, fallback_cat):
+    """주간베스트 배지에서 (종합순위, 분야순위, 분야이름) 을 뽑는다. 배지가 없으면 None.
+
+    배지 글자 주변만 잘라서 본다 — 정규식을 느슨하게 짰으니 페이지 전체에 돌리면
+    엉뚱한 '…위' 가 걸린다.
+    """
+    i = html.find('주간베스트')
+    if i < 0:
+        return None
+    win = html[max(0, i - 400):i + 1600]
+    hits = [(m.group(1).strip(), int(m.group(2).replace(',', ''))) for m in WB.finditer(win)]
+    ov = next((h for h in hits if '국내도서' in h[0]), None)
+    ct = next((h for h in hits if '국내도서' not in h[0]), None)
+    if ov is None and ct is None:
+        return None
+    return {'overall': ov[1] if ov else None,
+            'cat': ct[1] if ct else None,
+            'catName': ct[0] if ct else fallback_cat}
 
 
 def collect():
@@ -144,17 +225,14 @@ def collect():
     print('  상품 페이지 주간베스트')
     for k, b in BOOKS.items():
         try:
-            st, t = get('https://product.kyobobook.co.kr/detail/' + b['pid'], {'user-agent': 'Mozilla/5.0'})
-            if '주간베스트' not in t:
+            st, t = get_product(b['pid'])
+            wb = parse_weekly_best(t, b['cat'])
+            if wb is None:
                 print('    %-14s 주간베스트 표기 없음' % b['title']); continue
-            hits = [(m.group(1).strip(), int(m.group(2).replace(',', ''))) for m in WB.finditer(t)]
-            ov = next((h for h in hits if h[0] == '국내도서'), None)
-            ct = next((h for h in hits if h[0] != '국내도서'), None)
-            out[k]['weeklyBest'] = {'overall': ov[1] if ov else None,
-                                    'cat': ct[1] if ct else None,
-                                    'catName': ct[0] if ct else b['cat']}
-            print('    %-14s 국내도서 %s / %s %s' % (b['title'], (str(ov[1]) + '위') if ov else '–',
-                                                  b['cat'], (str(ct[1]) + '위') if ct else '–'))
+            out[k]['weeklyBest'] = wb
+            f = lambda v: (str(v) + '위') if v is not None else '–'
+            print('    %-14s 국내도서 %s / %s %s' % (b['title'], f(wb['overall']),
+                                                  wb['catName'], f(wb['cat'])))
         except Exception as e:
             print('    %-14s 실패: %s' % (b['title'], e))
     return out, meta
