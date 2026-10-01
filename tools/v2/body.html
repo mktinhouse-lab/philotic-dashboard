@@ -407,7 +407,9 @@ function freshBlock(){
      done:Object.values((D.funding||{}).projects||{}).length > 0
           && Object.values((D.funding||{}).projects||{}).every(p => p.done)},
     {n:'유튜브',      d:YT ? YT.through : null,    how:'사람이 입력'},
-    {n:'짧은 링크',   d:VL ? VL.to : null,         how:'사람이 입력'},
+    /* 볼라는 API 로 매일 받는다. totalAsOf 가 그 날짜다 — VL.to 는 일별 그래프가
+       끊긴 날(9/16)이라, 그걸 쓰면 반년이 지나도 「15일 전」으로 굳는다. */
+    {n:'짧은 링크',   d:VL ? (VL.totalAsOf || VL.to) : null, how:'자동'},
   ].filter(r => r.d);
   const today = [META.lastAuto, ADASOF, ASOF].filter(Boolean).sort().pop();
   const fail = (D.rankLastTry && D.rankLastTry.ok === false) ? '수집 실패' : '';
@@ -1335,6 +1337,61 @@ function launchBlock(){
 
 /* ══ 요약 탭 — 대표님용 한 장 ══
    스크롤 없이 한 화면에서 끝나야 한다. 돈과 목표만 남기고 과정은 다른 탭으로 보낸다. */
+/* ── 경로별 유입(요약) ──
+   광고는 돈을 넣은 만큼 들어온다 — 책끼리 견줄 거리가 못 된다. 공짜로 데려온 경로만
+   모아 비교한다. 완벽한 원시인의 「자청 유튜브」 같은 게 여기서 드러난다. */
+function trafficSummaryBlock(keys){
+  if (!VL || !VL.total || !VL.links) return '';
+  const isAd = g => g === 'meta' || g === 'ad';
+  const name = {}, chan = {};
+  VL.links.forEach(l => { name[l[0]] = l[1]; chan[l[0]] = l[2]; });
+
+  const rows = [];
+  Object.entries(VL.total).forEach(([slug, n]) => {
+    const bk = (VL.book||{})[slug];
+    if (!bk || !keys.includes(bk) || isAd(chan[slug]) || !(n > 0)) return;
+    rows.push({bk, slug, name: name[slug] || slug, n});
+  });
+  if (!rows.length) return '';
+  rows.sort((a,b) => b.n - a.n);
+
+  const per = {};
+  rows.forEach(r => { (per[r.bk] = per[r.bk] || []).push(r); });
+  const ordered = keys.filter(k => per[k]).sort((a,b) =>
+      sum(per[b].map(r=>r.n)) - sum(per[a].map(r=>r.n)));
+  const top = sum(per[ordered[0]].map(r=>r.n)) || 1;
+
+  const bars = ordered.map(k => {
+    const mine = per[k], tot = sum(mine.map(r=>r.n));
+    return '<tr><td>'+esc(D.books[k].short)+'</td>'
+      + '<td style="width:50%"><span class="pbar" style="--w:'+(tot/top*100)+'%;--c:'+BC[k]+'"></span></td>'
+      + '<td class="big">'+nf(tot)+'</td>'
+      + '<td class="muted" style="text-align:left">'+esc(mine[0].name)+' '+nf(mine[0].n)+'</td></tr>';
+  }).join('');
+
+  const tbl = rows.slice(0, 20).map(r =>
+    '<tr><td>'+esc(D.books[r.bk].short)+'</td>'
+    + '<td style="text-align:left">'+esc(r.name)+'</td>'
+    + '<td class="muted" style="text-align:left">'+esc(r.slug)+'</td>'
+    + '<td class="big">'+nf(r.n)+'</td></tr>');
+
+  return '<div class="sec">' + sech('경로별 유입',
+      '광고 말고 공짜로 데려온 것만 · 책끼리 견주기',
+      VL.totalAsOf ? VL.totalAsOf+' 기준' : '')
+    + '<div class="tiles">'
+    + tile('공짜로 데려온 클릭', nf(sum(rows.map(r=>r.n)))+'회', '광고 링크는 뺀 합계')
+    + tile('제일 센 경로', esc(rows[0].name), D.books[rows[0].bk].short+' · '+nf(rows[0].n)+'회')
+    + tile('살아 있는 경로', nf(rows.length)+'개', '클릭이 한 번이라도 있던 것')
+    + '</div>'
+    + '<div class="panel scroll"><table class="pathrank"><tbody>' + bars + '</tbody></table></div>'
+    + '<p class="note">광고 링크는 자릿수가 달라 뺐습니다 — 넣으면 나머지가 한 줄로 눌려 안 보입니다. '
+    + '볼라는 통계를 30일만 보관하므로, 매일 받아 우리 쪽에 쌓은 누적입니다.</p>'
+    + moreTable('경로 하나하나 보기 ('+rows.length+'개)',
+        '<th>책</th><th>경로</th><th>짧은 주소</th><th>클릭<span class="t2">누적</span></th>',
+        tbl, rows.length)
+    + '</div>';
+}
+
 function selectSummary(){
   const keys = D.order;
   const m = profitAll(keys, MONTH+'-01');
@@ -1382,6 +1439,7 @@ function selectSummary(){
     + '</div></div>';
 
   h += todoBlock(keys);
+  h += trafficSummaryBlock(keys);
   h += launchBlock();
   h += freshBlock();
   document.getElementById('view').innerHTML = h;
@@ -1529,7 +1587,7 @@ function select(k){
    그래야 구획을 새로 만들 때 등록하는 걸 잊어도 화면이 깨지지 않는다(「그 밖」으로 떨어진다). */
 const CATS = [
   {id:'week',    name:'이번 주',      keys:['이번 주 요약','이번 주 광고 소재','이번 주 콘텐츠']},
-  {id:'top',     name:'한눈에',        keys:['책별 한 줄','할 일','출간 후 같은 일수 비교']},
+  {id:'top',     name:'한눈에',        keys:['책별 한 줄','할 일','경로별 유입','출간 후 같은 일수 비교']},
   {id:'sales',   name:'판매',         keys:['책별 현황','일별 판매','서점별 판매','마케팅 일지']},
   {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수','순위 추이']},
   {id:'ad',      name:'광고',         keys:['광고 집행','광고 나간 곳','광고 소재별 성적']},
@@ -1540,12 +1598,14 @@ const CATS = [
   {id:'base',    name:'기준 · 자료',  keys:['계산 기준','데이터 현황','말 풀이']},
 ];
 /* 처음 열어 둘 것 — 한눈에 읽히는 것만 펴 두고, 긴 표·그림 줄은 접어 둔다 */
-const OPEN_BY_DEFAULT = new Set(['이번 주 요약','이번 주 광고 소재','이번 주 콘텐츠',
-  '책별 현황','일별 판매','서점별 판매',
-  '교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수','마케팅 일지','순위 추이',
-  '책별 한 줄','할 일','출간 후 같은 일수 비교',
-  '광고 집행','데이터 현황',
-  '협업 영상','업로드 예정','채널별 유입']);
+const OPEN_BY_DEFAULT = new Set([
+  /* 들어오자마자 보여야 하는 것만 편다. 나머지는 접어 두되 제목 줄에 핵심 숫자를
+     남기므로(peek) 펴기 전에도 대강이 읽힌다. 책 탭이 4,700px 에서 절반으로 줄어든다. */
+  '책별 한 줄','할 일',
+  '이번 주 요약','책별 현황','일별 판매',
+  '교보문고 등수','교보 바로펀딩',
+  '광고 집행','채널별 유입','경로별 유입',
+  '협업 영상','데이터 현황']);
 
 const LS = 'philotic-v2-open';
 const readOpen = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch(e){ return {}; } };
@@ -1596,9 +1656,32 @@ function layout(){
   });
   spy(secs);
 }
+/* 접힌 줄에 남길 한 조각 — 그 구획에서 제일 앞선 숫자와 그 이름.
+   접어 두면 짧아지는 대신 뭐가 들었는지 모르게 된다. 그걸 막는 장치다. */
+function peek(s){
+  /* 이름이 붙은 숫자만 꺼낸다. 「9만원」처럼 맨 숫자만 남으면 무슨 값인지 알 수 없어
+     없느니만 못하다 — 그럴 바엔 아무것도 안 적는다. */
+  const box = s.querySelector('.secb .kpi, .secb .tile');
+  if (!box) return '';
+  const lab = box.querySelector('.lab, .l'), el = box.querySelector('.big, .v');
+  if (!lab || !el) return '';
+  const v = el.textContent.replace(/\s+/g,' ').trim();
+  return v ? lab.textContent.trim() + ' ' + v : '';
+}
 function setOpen(s, open, persist){
   s.dataset.open = String(open);
-  s.querySelector('.sech').setAttribute('aria-expanded', String(open));
+  const head = s.querySelector('.sech');
+  head.setAttribute('aria-expanded', String(open));
+  let tag = head.querySelector('.peek');
+  if (open){ if (tag) tag.remove(); }
+  else {
+    const t = peek(s);
+    if (t){
+      if (!tag){ tag = document.createElement('span'); tag.className = 'peek';
+                 head.insertBefore(tag, head.querySelector('.chev')); }
+      tag.textContent = t;
+    } else if (tag) tag.remove();
+  }
   if (persist){ const o = readOpen(); o[s.dataset.title] = open; saveOpen(o); }
 }
 function toggle(s){ setOpen(s, s.dataset.open === 'false', true); }
