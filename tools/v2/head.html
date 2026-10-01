@@ -211,8 +211,11 @@ svg{display:block;width:100%;height:auto;overflow:visible}
 .strip a.it:hover{border-color:var(--ink3)}
 .strip .ph{position:relative;width:100%;aspect-ratio:4/5;background:var(--sunk);overflow:hidden}
 .strip .ph img{width:100%;height:100%;object-fit:cover;display:block}
-.strip .ph .alt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-size:11.5px;color:var(--ink3);text-align:center;padding:10px;line-height:1.45}
+.strip .ph .alt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:4px;padding:10px;text-align:center;
+  background:linear-gradient(140deg,var(--sunk),var(--rule2))}
+.strip .ph .alt b{font-size:17px;font-weight:800;color:var(--ink2);font-variant-numeric:tabular-nums}
+.strip .ph .alt i{font-style:normal;font-size:10.5px;color:var(--ink3);line-height:1.3}
 .strip .cap{padding:9px 10px 11px}
 .strip .cap b{display:block;font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums}
 .strip .cap span{display:block;font-size:11px;color:var(--ink2);margin-top:2px;
