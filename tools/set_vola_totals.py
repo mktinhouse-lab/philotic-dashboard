@@ -54,6 +54,12 @@ def main():
     totals = {str(k): int(v) for k, v in (src.get('totals') or {}).items()}
     if not totals:
         raise SystemExit('totals 가 비었다 — 넣을 게 없다')
+
+    # 「안 볼 링크」. 볼라에 남아 있어도 화면에서는 뺀다 — 잘못 붙였거나 안 쓰는 링크다.
+    # 블록에 적어 두지 않으면 매일 API 가 다시 끌어와 되살아난다.
+    drop = set(d.get('drop') or [])
+    if drop:
+        totals = {k: v for k, v in totals.items() if k not in drop}
     as_of = src.get('asOf') or datetime.date.today().isoformat()
 
     d.setdefault('total', {})
@@ -85,6 +91,18 @@ def main():
         if v != before:
             moved.append((code, before, v))
         d['total'][code] = v
+
+    # 안 볼 링크가 이미 들어와 있으면 치운다
+    for code in drop:
+        d['total'].pop(code, None)
+        d['book'].pop(code, None)
+        (d.get('daily') or {}).pop(code, None)
+    if drop:
+        d['links'] = [l for l in links if l[0] not in drop]
+        for bk, m in (d.get('chan') or {}).items():
+            for ch, code in list(m.items()):
+                if code in drop:
+                    m[ch] = None
 
     d['totalAsOf'] = as_of
     d['collected'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
