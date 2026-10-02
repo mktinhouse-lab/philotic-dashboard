@@ -18,7 +18,7 @@
 | 판매 시트 → 아티팩트 | 자동 | `대시보드 자동 갱신 (판매 + 광고)` · 매일 **09:00 / 18:00** KST |
 | 메타 광고 | 자동 | 같은 루틴 (meta MCP) |
 | 인스타 · 페북 | 자동 | 같은 루틴 (Windsor 커넥터) + `organicPy` |
-| 교보 순위 · 펀딩 · 볼라 · 유튜브 | 자동 | `필로틱 교보·볼라·유튜브` · 매일 **11:10** KST (필로틱 환경) |
+| 교보 순위 · 펀딩 · 볼라 · 유튜브 2채널 · 유튜브 썸네일 | 자동 | `필로틱 교보·볼라·유튜브(2채널)` · 매일 **11:10** KST (필로틱 환경) |
 | **옛 대시보드 → 현황판** | 자동 | `필로틱 현황판 자동 갱신` · 매일 **12:00** KST |
 | 주간 소재별 광고 성적 | **사람** | 주 1회 · 아래 「주 1회」 참고 |
 | 유튜브 | **사람** | Windsor 유튜브 커넥터 미연결 |
@@ -136,10 +136,30 @@ ads_get_ad_entities(ad_account_id='581875957830502', level='ad',
 python3 tools/set_funding.py dash.html pyoryu 4120000
 ```
 
-### 유튜브
+### 유튜브 — 채널이 둘이다
 
-윈저에 `youtube` 커넥터가 있다(OAuth). 한 번 연결하면 그 뒤로는 자동이다.
-연결 링크: https://onboard.windsor.ai/connect?connector=youtube&next=/youtube/authorize
+| 채널 | 주소 | 블록 |
+| --- | --- | --- |
+| 1분지혜 (우리) | `UC_eCtsz2CxxDgTzev6kroOQ` | `ytData` |
+| 1분수업 (브랜드미디어팀) | `@1min_th1` | `ytData2` |
+
+```bash
+python3 tools/youtube.py dash.html                                      # 1분지혜
+python3 tools/youtube.py --channel @1min_th1 --block ytData2 dash.html   # 1분수업
+```
+
+커넥터도 API 키도 안 쓴다 — 채널 공개 페이지를 긁는다. 그래서 **유튜브로 나가는 길이
+열린 환경(필로틱)에서만** 돈다. 블록이 없으면 `payload` 앞에 빈 블록을 만들어 넣고 이어간다.
+
+화면 쪽은 `ytBlock(k, Y, ch)` · `ytChannelBlock(Y, ch)` 가 채널을 인자로 받으므로
+세 번째 채널이 생기면 `ytData3` 블록과 호출 한 줄만 더하면 된다.
+
+**1분수업에는 단축링크를 안 걸어 뒀다.** 그래서 클릭 칸이 「셀 수 없음」으로 뜬다 —
+0 이라고 적으면 아무도 안 눌렀다는 뜻이 되어 거짓말이 된다. 링크를 걸면
+`volaDaily.chan[책].Y2` 에 코드를 넣으면 그때부터 숫자가 뜬다.
+
+윈저에 `youtube` 커넥터도 있다(OAuth). 공개 페이지로 못 얻는 저장·공유·댓글을 받으려면
+연결해야 한다: https://onboard.windsor.ai/connect?connector=youtube&next=/youtube/authorize
 
 ## 어느 환경에서 도는지가 중요하다
 
@@ -189,7 +209,7 @@ vo.la
 | 루틴 | 트리거 ID | 언제 | 환경 |
 | --- | --- | --- | --- |
 | 대시보드 자동 갱신 (판매 + 광고) | `trig_01YQJN4Hc7zcWU7oK8kPVWKD` | 09:00 · 18:00 ※ | 기본 |
-| 필로틱 교보·볼라·유튜브 | `trig_017i2zrDXyF4Z6PdNGinp2Rv` | 11:10 | 필로틱 |
+| 필로틱 교보·볼라·유튜브(2채널) | `trig_017i2zrDXyF4Z6PdNGinp2Rv` | 11:10 | 필로틱 |
 | **필로틱 현황판 자동 갱신** | `trig_01HjFwZ3JqhGQhPPzLYUPQiF` | 12:00 | 기본 |
 | 대시보드 갱신 감시 (워치독) | `trig_01KQ1DfNSHSLDJE7jm8QaExo` | 10:00 | 기본 |
 
@@ -237,8 +257,12 @@ www.facebook.com
 ```
 
 인스타·페북 **썸네일**을 못 받아 최근 콘텐츠 칸이 글자 카드로 뜬다(2026-10-01 기준 인스타 25장·
-페북 16장 비어 있음). 유튜브 썸네일은 `i.ytimg.com` 이 열려 있어 `tools/thumbs.py` 가 이미 채운다.
-허용목록은 **환경을 쓰는 사람이 설정 화면에서** 잡아야 한다 — API 로 바꿀 수 없다.
+페북 16장 비어 있음). 허용목록은 **환경을 쓰는 사람이 설정 화면에서** 잡아야 한다 — API 로 바꿀 수 없다.
+
+유튜브 썸네일(`i.ytimg.com`)은 **Default 환경에서 막혀 있다** (2026-10-02 확인: `curl` 이 `000`,
+프록시가 `connect_rejected`). 그래서 `tools/thumbs.py` 는 11:10 **필로틱** 루틴에서 돈다.
+12시 Default 루틴이 도는 `thumbs.py` 는 인스타·페북 칸만 채운다. 한 도구가 두 환경에서
+각자 되는 칸만 채우는 구조다 — 이상해 보이지만 망이 그렇게 갈려 있어서 그렇다.
 
 ### 2. 판매·광고 루틴 시각을 09:00 → 11:40 으로
 
