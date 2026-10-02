@@ -39,14 +39,16 @@ TYP = {'CAROUSEL_ALBUM': 'C', 'REELS': 'R', 'IMAGE': 'I', 'VIDEO': 'V'}
 
 # 캡션에서 책을 가르는 말. 먼저 걸리는 것이 이긴다 — 아래로 갈수록 느슨하다.
 BOOKWORDS = [
-    # 우서전지를 맨 앞에 둔다. 제목이 길어 다른 책 말과 겹칠 일이 없고, 이 목록에 없어서
-    # 2026-09-08 뒤로 올린 글이 전부 「어느 책인지 모름」으로 빠져 있었다.
-    # 제목이 「우리는 서로의/서로에게 전부이자 지옥이었다」로 흔들려서, 안 흔들리는
-    # 토막만 쥔다. which_book() 이 공백을 지우고 견주므로 띄어쓰기는 신경 안 써도 된다.
-    # youtube.py 도 같은 토막('전부이자지옥')을 쓴다 — 두 수집기가 어긋나면 안 된다.
-    ('pyoryu',  ['전부이자지옥', '우서전지']),
-    ('kaljung', ['칼 융의 내면수업', '칼융의 내면수업', '내면수업', '칼 융', '칼융']),
-    ('wonsiin', ['완벽한 원시인', '완벽한원시인', '원시인']),
+    # 제목으로만 가르면 흔들린다 — 우서전지는 9월 중순까지 「서로에게 전부였고 지옥이었다」,
+    # 9/21 부터 「서로의 전부이자 지옥이었다」로 캡션이 바뀌었다. 그래서 둘 다 넣는다.
+    #
+    # 더 믿을 만한 것은 **캡션에 박힌 단축링크**다. 글마다 그 책 링크를 빠짐없이 달고 있고
+    # 사람이 고쳐 쓰다 틀릴 일이 없다. 그래서 링크를 먼저 보고, 제목은 보루로 쓴다.
+    # which_book() 이 공백을 지우고 견주므로 띄어쓰기는 신경 쓰지 않아도 된다.
+    ('pyoryu',  ['vo.la/sea', '전부이자지옥', '전부였고지옥', '우서전지']),
+    ('kaljung', ['vo.la/carljung', 'vo.la/jung',
+                 '칼 융의 내면수업', '칼융의 내면수업', '내면수업', '칼 융', '칼융']),
+    ('wonsiin', ['vo.la/caveman', '완벽한 원시인', '완벽한원시인', '원시인']),
     ('freud',   ['프로이트의 감정수업', '프로이트']),
     ('muhan',   ['무한의 부', '무한의부']),
 ]
@@ -147,6 +149,7 @@ def main():
     P['igOther'].setdefault('fb', [])
 
     stat = {}          # (채널, 필드) -> [견준 행, 줄어든 행, 예시] — 필드가 무너지면 포기한다
+    moved = []         # (옛 자리, 새 자리, 글) — 책 배정이 바뀐 것
     ig_upd = ig_add = 0
     fb_upd = fb_add = 0
 
@@ -172,9 +175,22 @@ def main():
                    num(it.get('media_views')), num(it.get('media_reach')),
                    num(it.get('media_saved')), num(it.get('media_shares')), sc]
 
+            # 담긴 곳이 이미 있어도 캡션이 다른 책을 가리키면 옮긴다.
+            # 예전에 잘못 담긴 글이 영영 그 자리에 눌러앉는 것을 막는다 — 실제로
+            # 우서전지 글 수십 건이 칼 융 밑에 들어가 한 달을 버텼다.
+            # 캡션이 아무 책도 안 가리키면(None) 건드리지 않는다 — 모른다고 옮기면 더 나쁘다.
             slot = where.get(sc)
+            want = which_book(it.get('media_caption'))
             if slot is None:
-                slot = which_book(it.get('media_caption')) or '__other'
+                slot = want or '__other'
+            elif want and want != slot:
+                from_lst = P['igOther']['ig'] if slot == '__other' else (
+                    P['books'].get(slot, {}).get('igPosts') or [])
+                for i, x in enumerate(from_lst):
+                    if str(x[7]) == sc:
+                        from_lst.pop(i); break
+                moved.append((slot, want, sc))
+                slot = want
             lst = P['igOther']['ig'] if slot == '__other' else P['books'].setdefault(
                 slot, {}).setdefault('igPosts', [])
 
@@ -208,6 +224,7 @@ def main():
             clk = num(it.get('post_clicks_by_type_link_clicks'))
 
             hit = at_min.get(ts)
+            want = which_book(it.get('post_message'))
             if hit:
                 r = hit[1]
                 for i, v in ((2, imp), (3, like), (4, cmt), (5, shr), (6, clk)):
@@ -215,13 +232,23 @@ def main():
                 # r[1] 은 정체를 못 밝힌 칸이라 화면에 안 쓴다 — 덮어쓰지 않는다.
                 # r[7] 도 기존 릴스 id 를 유지한다(형식이 달라 바꾸면 다음 대조가 깨진다).
                 r[2], r[3], r[4], r[5], r[6] = imp, like, cmt, shr, clk
+                # 담긴 책이 캡션과 어긋나면 옮긴다 (인스타 쪽과 같은 사정이다)
+                if want and want != hit[0]:
+                    from_lst = P['igOther']['fb'] if hit[0] == '__other' else (
+                        P['books'].get(hit[0], {}).get('fbPosts') or [])
+                    for i, x in enumerate(from_lst):
+                        if str(x[0])[:16] == ts:
+                            from_lst.pop(i); break
+                    P['books'].setdefault(want, {}).setdefault('fbPosts', []).append(r)
+                    at_min[ts] = (want, r)
+                    moved.append((hit[0], want, ts))
                 fb_upd += 1
             else:
                 pid = str(it.get('post_id') or '')
                 pid = pid.split('_')[-1] if '_' in pid else pid
                 if not pid:
                     continue
-                slot = which_book(it.get('post_message')) or '__other'
+                slot = want or '__other'
                 lst = P['igOther']['fb'] if slot == '__other' else P['books'].setdefault(
                     slot, {}).setdefault('fbPosts', [])
                 lst.append([ts, 0, imp, like, cmt, shr, clk, pid])
@@ -236,6 +263,12 @@ def main():
     minor = sum(f for _, f, _ in stat.values())
     if minor:
         print('  줄어든 행 %d 개 — 저장·공유 취소로 보고 그대로 반영합니다' % minor)
+
+    if moved:
+        from collections import Counter
+        c = Counter((a, b) for a, b, _ in moved)
+        print('  책 배정을 고친 글 %d 건: %s' % (
+            len(moved), ' · '.join('%s→%s %d' % (a, b, n) for (a, b), n in c.most_common())))
 
     if ig_upd + ig_add + fb_upd + fb_add == 0:
         skip('반영할 게시물이 없습니다')
