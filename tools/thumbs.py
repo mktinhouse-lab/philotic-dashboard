@@ -65,7 +65,11 @@ def find_block(html, bid):
     return start, end
 
 
-def read_block(html, bid):
+def read_block(html, bid, required=True):
+    """없어도 되는 블록은 required=False — 빈 통을 돌려준다.
+    (ytData2 는 두 번째 유튜브 채널을 처음 긁는 날까지 없다)"""
+    if not required and ('<script id="%s" type="application/json">' % bid) not in html:
+        return {}
     start, end = find_block(html, bid)
     return json.loads(html[start:end])
 
@@ -192,8 +196,11 @@ def page_image(page_urls):
 
 # ---------------------------------------------------------------- 빠진 것 세기
 
-def wanted(payload, ytdata):
-    """{종류: {키: 날짜}} — 날짜는 오래된 것부터 버릴 때 쓴다."""
+def wanted(payload, *ytdatas):
+    """{종류: {키: 날짜}} — 날짜는 오래된 것부터 버릴 때 쓴다.
+
+    유튜브는 채널이 둘이다(ytData=1분지혜, ytData2=1분수업). 썸네일은 영상 id 로
+    저장하니 한 통에 같이 담아도 섞이지 않는다."""
     ig, fb, yt = {}, {}, {}
     for book in (payload.get("books") or {}).values():
         for row in book.get("igPosts") or []:
@@ -202,10 +209,11 @@ def wanted(payload, ytdata):
         for row in book.get("fbPosts") or []:
             if len(row) > 7 and row[7]:
                 fb[row[7]] = row[0]
-    for book in (ytdata.get("books") or {}).values():
-        for v in book.get("videos") or []:
-            if v and v[0]:
-                yt[v[0]] = v[2] if len(v) > 2 else ""
+    for ytdata in ytdatas:
+        for book in (ytdata.get("books") or {}).values():
+            for v in book.get("videos") or []:
+                if v and v[0]:
+                    yt[v[0]] = v[2] if len(v) > 2 else ""
     return {"ig": ig, "fb": fb, "yt": yt}
 
 
@@ -231,7 +239,9 @@ def prune(thumbs, dates):
 def main(path):
     html = open(path, encoding="utf-8").read()
     thumbs = read_block(html, "thumbs")
-    need = wanted(read_block(html, "payload"), read_block(html, "ytData"))
+    need = wanted(read_block(html, "payload"),
+                  read_block(html, "ytData"),
+                  read_block(html, "ytData2", required=False))
 
     for k in ("ig", "fb", "yt"):
         thumbs.setdefault(k, {})
