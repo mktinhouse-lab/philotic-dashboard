@@ -29,9 +29,12 @@ import time
 import urllib.error
 import urllib.request
 
-MAX_W = 320          # 가로 320px 안쪽으로 줄인다
-MAX_BYTES = 15360    # 한 장 15KB 를 넘기지 않는다 (base64 전 원본 기준)
-BLOCK_LIMIT = 12 * 1024 * 1024   # 블록이 이보다 커지면 오래된 것부터 버린다
+# 화면에서 썸네일이 가장 크게 뜨는 자리가 160px 안쪽이다. 320px 은 그 두 배라
+# 눈에 보이는 이득 없이 용량만 먹었다. 아티팩트는 페이지가 12MB 를 넘으면
+# 아예 안 열리므로("Couldn't load this Artifact") 여기가 곧 한계선이다.
+MAX_W = 240          # 가로 240px 안쪽으로 줄인다
+MAX_BYTES = 9216     # 한 장 9KB 를 넘기지 않는다 (base64 전 원본 기준)
+BLOCK_LIMIT = 7 * 1024 * 1024    # 블록이 이보다 커지면 오래된 것부터 버린다
 TIMEOUT = 30
 # 공개 페이지는 몰아치면 429 가 난다. 한 장 받을 때마다 이만큼 쉰다.
 DELAY = float(os.environ.get("THUMBS_DELAY", "1.2"))
@@ -236,6 +239,52 @@ def prune(thumbs, dates):
 
 # ---------------------------------------------------------------- 본체
 
+def rebake(path):
+    """이미 들어 있는 썸네일을 지금 기준(MAX_W·MAX_BYTES)으로 다시 굽는다.
+
+    망에 안 나간다. 기준을 줄였을 때 한 번 돌리면 블록이 그만큼 가벼워진다.
+    다시 구워서 되레 커지는 것은 그대로 둔다."""
+    html = open(path, encoding="utf-8").read()
+    thumbs = read_block(html, "thumbs")
+    was = now = 0
+    n = 0
+    for kind in ("ig", "fb", "yt", "ad"):
+        cur = thumbs.get(kind)
+        if not isinstance(cur, dict):
+            continue
+        for key, uri in list(cur.items()):
+            was += len(uri)
+            if not isinstance(uri, str) or not uri.startswith("data:"):
+                now += len(uri)
+                continue
+            try:
+                new = as_data_uri(shrink(base64.b64decode(uri.split(",", 1)[1])))
+            except Exception:
+                new = uri
+            if len(new) < len(uri):
+                cur[key] = new
+                n += 1
+            now += len(cur[key])
+    print("다시 구운 것 %d 장 · %.2fMB → %.2fMB" % (n, was / 1048576, now / 1048576))
+    if not n:
+        print("줄어든 게 없다. 파일을 고치지 않는다.")
+        return 0
+
+    body = dump_block(thumbs)
+    start, end = find_block(html, "thumbs")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(html[:start] + body + html[end:])
+    check = read_block(open(tmp, encoding="utf-8").read(), "thumbs")
+    for k in ("ig", "fb", "yt"):
+        if len(check.get(k, {})) != len(thumbs.get(k, {})):
+            os.unlink(tmp)
+            raise SystemExit("되읽기가 어긋났다: %s" % k)
+    os.replace(tmp, path)
+    print("블록 크기 %.2f MB" % (len(body.encode("utf-8")) / 1048576))
+    return 0
+
+
 def main(path):
     html = open(path, encoding="utf-8").read()
     thumbs = read_block(html, "thumbs")
@@ -349,4 +398,7 @@ def main(path):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "dash.html"))
+    argv = sys.argv[1:]
+    if argv and argv[0] == "--shrink":
+        sys.exit(rebake(argv[1] if len(argv) > 1 else "dash.html"))
+    sys.exit(main(argv[0] if argv else "dash.html"))
