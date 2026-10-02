@@ -14,7 +14,7 @@
 전에는 이 변환을 세션 안에서 손으로 했는데, 그러다 판매만 새로 넣고 펀딩은 옛 값을
 남기는 일이 있었다. 한 군데서 다 뽑게 해 두면 그런 어긋남이 생기지 않는다.
 """
-import sys, json, os
+import sys, json, os, io, base64, datetime, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -97,9 +97,86 @@ def build_data(html):
     return out
 
 
+# ── 썸네일 다이어트 ───────────────────────────────────────────────────────
+# 원천은 썸네일을 모두 base64 로 들고 있다(2026-10-02 기준 11.6MB). 그대로 거울에
+# 옮기면 페이지가 12MB 를 넘고, 그러면 아티팩트가 아예 안 열린다
+# ("Couldn't load this Artifact"). 거울은 **화면에 실제로 뜨는 것만** 들고 가면 된다.
+#
+# 화면이 쓰는 건 블록마다 「조회 많은 순 10장」 두 벌(최근 2주 · 전체)과 타임라인 8장뿐이다.
+# 그래서 묶음마다 상위 TOP + 최근 NEW 만 남기고, 남긴 것도 220px JPEG 로 다시 줄인다.
+# 버리는 게 아니다 — 원천에는 그대로 있고, 거울만 가볍게 만든다.
+TOP, NEW, WIN = 12, 8, 14          # 상위 몇 장 · 최근 몇 장 · 최근 며칠을 '최근'으로 볼지
+THUMB_W, THUMB_Q, THUMB_MIN = 220, 60, 6144   # 가로 · 품질 · 이보다 작으면 그대로 둔다
+PAGE_WARN, PAGE_STOP = 8, 13       # MB — 넘으면 경고 / 멈춘다
+
+
+def _pick(rows, ikey, idate, iview):
+    """한 묶음에서 화면에 뜰 수 있는 것들의 열쇠."""
+    w = (datetime.date.today() - datetime.timedelta(days=WIN)).isoformat()
+    rows = [r for r in rows if len(r) > max(ikey, idate, iview) and r[ikey]]
+    byv = sorted(rows, key=lambda r: -(r[iview] or 0))
+    keep = {r[ikey] for r in byv[:TOP]}
+    keep |= {r[ikey] for r in [x for x in byv if str(x[idate])[:10] >= w][:TOP]}
+    keep |= {r[ikey] for r in sorted(rows, key=lambda r: str(r[idate]), reverse=True)[:NEW]}
+    return keep
+
+
+def _shrink(uri):
+    """220px JPEG 로 다시 굽는다. 못 구우면 원래 것을 그대로 돌려준다."""
+    if not isinstance(uri, str) or not uri.startswith('data:') or len(uri) < THUMB_MIN:
+        return uri
+    try:
+        from PIL import Image
+        raw = base64.b64decode(uri.split(',', 1)[1])
+        im = Image.open(io.BytesIO(raw)).convert('RGB')
+        if im.width > THUMB_W:
+            im = im.resize((THUMB_W, max(1, round(im.height * THUMB_W / im.width))),
+                           Image.LANCZOS)
+        o = io.BytesIO()
+        im.save(o, 'JPEG', quality=THUMB_Q, optimize=True, progressive=True)
+        new = 'data:image/jpeg;base64,' + base64.b64encode(o.getvalue()).decode()
+        return new if len(new) < len(uri) else uri
+    except Exception:
+        return uri
+
+
+def slim_thumbs(data):
+    th = data.get('thumbs')
+    if not isinstance(th, dict):
+        return
+    need = {'ig': set(), 'fb': set(), 'yt': set()}
+    for b in (data.get('books') or {}).values():
+        ig = b.get('igPosts') or []
+        for acc in {p[1] for p in ig if len(p) > 1}:
+            need['ig'] |= _pick([p for p in ig if p[1] == acc], 7, 0, 3)
+        need['fb'] |= _pick(b.get('fbPosts') or [], 7, 0, 2)
+    for bid in ('ytData', 'ytData2'):
+        y = data.get(bid) or {}
+        for b in (y.get('books') or {}).values():
+            need['yt'] |= _pick(b.get('videos') or [], 0, 2, 3)
+        need['yt'] |= _pick((y.get('other') or {}).get('videos') or [], 0, 2, 3)
+
+    was = sum(len(str(v)) for k in th if isinstance(th[k], dict) for v in th[k].values())
+    for kind, keys in need.items():
+        cur = th.get(kind)
+        if isinstance(cur, dict):
+            th[kind] = {i: _shrink(u) for i, u in cur.items() if i in keys}
+    # 광고(ad) 는 수가 적고 광고 탭이 통째로 쓰므로 고르지 않고 줄이기만 한다
+    if isinstance(th.get('ad'), dict):
+        th['ad'] = {i: _shrink(u) for i, u in th['ad'].items()}
+    now = sum(len(str(v)) for k in th if isinstance(th[k], dict) for v in th[k].values())
+    th['slimmed'] = True
+    print('  썸네일 %.1fMB → %.1fMB (%s)' % (
+        was / 1048576, now / 1048576,
+        ' · '.join('%s %d장' % (k, len(th[k])) for k in ('ig', 'fb', 'yt', 'ad')
+                   if isinstance(th.get(k), dict))))
+
+
 def main(src, out='v2.html'):
     html = open(src, encoding='utf-8').read()
     data = build_data(html)
+
+    slim_thumbs(data)
 
     head = open(os.path.join(HERE, 'v2', 'head.html'), encoding='utf-8').read()
     body = open(os.path.join(HERE, 'v2', 'body.html'), encoding='utf-8').read()
@@ -118,8 +195,14 @@ def main(src, out='v2.html'):
         '기준일 있음': bool(data['collected']),
         '책 다섯 권': len(data['books']) == len(data['order']),
     }
+    mb = len(doc.encode('utf-8')) / 1048576
+    if mb > PAGE_STOP:
+        sys.exit('검증 실패 페이지가 %.1fMB 입니다 — 이만큼 커지면 아티팩트가 안 열립니다 '
+                 '("Couldn\'t load this Artifact"). 썸네일을 더 줄여야 합니다.' % mb)
     if not all(checks.values()):
         sys.exit('검증 실패 %s — 아무것도 쓰지 않았습니다' % checks)
+    if mb > PAGE_WARN:
+        print('  ⚠ 페이지가 %.1fMB 입니다 — %dMB 를 넘으면 안 열립니다' % (mb, PAGE_STOP))
 
     open(out, 'w', encoding='utf-8').write(doc)
     last = {k: (v['sales'][-1][0] if v.get('sales') else '–') for k, v in data['books'].items()}
