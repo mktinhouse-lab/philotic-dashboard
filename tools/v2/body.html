@@ -351,10 +351,13 @@ const ADT = (D.adThumb  || {}).post   || {};      /* '책|소재명|#순위' →
 const IGX = (D.igExtra  || {}).post   || {};      /* 게시물 → [외부링크 유입, 프로필 방문, ·, 릴스여부] */
 const IGF = Object.assign({asOf:'', src:'', cut:0, post:{}}, D.igFollow || {});
 const YT  = D.ytData || null;
+/* 두 번째 유튜브 채널 — 브랜드미디어팀의 1분수업. 같은 모양의 블록을 하나 더 그린다. */
+const YT2 = D.ytData2 || null;
+const YTS = [YT, YT2].filter(Boolean);
 const VL  = D.volaDaily || null;
 const META = D.meta || {};
 /* 채널 색 — 옛 대시보드와 같은 색을 쓴다. 두 화면을 오가도 같은 채널이 같은 색이어야 한다. */
-const CHC = {B:'#2a78d6', P:'#eb6834', F:'#1baf7a', Y:'#c0392b'};
+const CHC = {B:'#2a78d6', P:'#eb6834', F:'#1baf7a', Y:'#c0392b', Y2:'#8e44ad'};
 /* 인스타 계정 이름.
    원천(payload.igAcc)에는 philotic_book 이 「1분지혜」로 적혀 있는데 그건 틀렸다 —
    1분지혜는 유튜브 채널이고, philotic_book 은 「1분 책방」이다. 원천을 쓰는 루틴이
@@ -589,16 +592,17 @@ function weekBlock(keys, isAll){
       img:(TH.fb||{})[p[8]]||null, main:cmp(p[3])+' 조회',
       sub:kday(p[1]).slice(5)+' · 링크 '+nf(p[7])+(keys.length>1?' · '+D.books[p[0]].short:''),
       alt:'페이스북 릴스'}))});
-  if (YT && YT.books){
-    const yv = keys.flatMap(x => ((YT.books[x]||{}).videos||[]).map(v=>[x].concat(v)))
+  YTS.forEach((Y, i) => {
+    if (!Y.books) return;
+    const yv = keys.flatMap(x => ((Y.books[x]||{}).videos||[]).map(v=>[x].concat(v)))
         .filter(v => String(v[3]) >= since).sort((a,b)=>b[4]-a[4]);
-    if (yv.length) lanes.push({name:(YT.ch?YT.ch.title:'유튜브')+' (유튜브)', c:CHC.Y, n:yv.length,
+    if (yv.length) lanes.push({name:(Y.ch?Y.ch.title:'유튜브')+' (유튜브)', c:i?CHC.Y2:CHC.Y, n:yv.length,
       views:sum(yv.map(v=>v[4])),
       items: yv.slice(0,8).map(v => ({url:'https://www.youtube.com/'+(v[8]?'shorts/':'watch?v=')+v[1],
         img:(TH.yt||{})[v[1]]||'https://i.ytimg.com/vi/'+v[1]+'/hqdefault.jpg',
         main:cmp(v[4])+' 조회', sub:String(v[3]).slice(5)+' · 좋아요 '+nf(v[5]),
         alt:String(v[2]).slice(0,24)}))});
-  }
+  });
   if (lanes.length){
     h += '<div class="sec">' + sech('이번 주 콘텐츠',
         esc(since)+' 이후 올린 것 · 조회 많은 순 · 광고 아닌 우리 콘텐츠')
@@ -876,14 +880,15 @@ function fbBlock(k){
 
 /* ── 유튜브 (책별) ── 영상 [id, 제목, 올린날, 조회, 좋아요, 댓글, 저장, 쇼츠여부]
    일별 [조회, 저장, 좋아요, 댓글, 공유] */
-function ytBlock(k){
-  const b = YT && YT.books ? YT.books[k] : null;
+function ytBlock(k, Y, ch){
+  Y = Y || YT; ch = ch || 'Y';
+  const b = Y && Y.books ? Y.books[k] : null;
   if (!b || !b.n) return '';
   const days = Object.keys(b.daily||{}).sort().slice(-30);
   const vids = (b.videos||[]).slice();
   const vurl = v => 'https://www.youtube.com/'+(v[7]?'shorts/':'watch?v=')+v[0];
-  const lag = YT.through && YT.asOf ? dayGap(YT.through, kday(YT.asOf)) : 0;
-  const got = v => pull(k, 'Y', String(v[2]).slice(0,10));
+  const lag = Y.through && Y.asOf ? dayGap(Y.through, kday(Y.asOf)) : 0;
+  const got = v => pull(k, ch, String(v[2]).slice(0,10));
   const row = v => { const g = got(v);
     return '<tr><td>'+esc(String(v[2]).slice(2))+'</td><td class="big">'+nf(v[3])+'</td><td>'+nf(v[4])+'</td>'
     + '<td>'+nf(v[5])+'</td><td>'+nf(v[6])+'</td>'
@@ -902,11 +907,11 @@ function ytBlock(k){
   const byView = vids.slice().sort((a,b)=>b[3]-a[3]);
   const recent = byView.filter(v => String(v[2]).slice(0,10) >= SINCE14);
 
-  const cl = chanLink(k, 'Y');
-  return '<div class="sec">' + sech((YT.ch?esc(YT.ch.title):'유튜브')+' — 유튜브',
+  const cl = chanLink(k, ch);
+  return '<div class="sec">' + sech((Y.ch?esc(Y.ch.title):'유튜브')+' — 유튜브',
       '영상 '+nf(b.n)+'건 · 광고 아닌 우리 콘텐츠입니다'
       + (cl ? ' · 프로필 링크 <b>vo.la/'+esc(cl.slug)+'</b>' : ''),
-      lag > 1 ? '저장·공유와 일별 그래프는 '+esc(YT.through)+'까지만 확정' : '')
+      lag > 1 ? '저장·공유와 일별 그래프는 '+esc(Y.through)+'까지만 확정' : '')
     + '<div class="tiles">'
     + tile('보여진 횟수', cmp(b.views)+'회', '영상 '+nf(b.n)+'건')
     + tile('좋아요', nf(b.likes)+'개', b.views?'조회 대비 '+pct(b.likes,b.views).toFixed(2)+'%':'—')
@@ -915,8 +920,8 @@ function ytBlock(k){
     + tile('공유 · 댓글', nf(b.shares)+' · '+nf(b.comments), '')
     + '</div>'
     + (days.length ? '<div class="chart"><div class="legend">'
-        + '<span><i style="background:'+CHC.Y+'"></i>날마다 조회수</span></div>'
-        + stackChart(days, [{name:'유튜브', c:CHC.Y, vals:days.map(d=>(b.daily[d]||[0])[0]||0)}], {h:200})
+        + '<span><i style="background:'+CHC[ch]+'"></i>날마다 조회수</span></div>'
+        + stackChart(days, [{name:'유튜브', c:CHC[ch], vals:days.map(d=>(b.daily[d]||[0])[0]||0)}], {h:200})
         + '</div>' : '')
     + seg([{name:'최근 2주 ('+recent.length+')', html: pane(recent)},
             {name:'전체 ('+byView.length+')', html: pane(byView)}])
@@ -925,14 +930,15 @@ function ytBlock(k){
 }
 
 /* ── 유튜브 채널 (전체 탭) ── */
-function ytChannelBlock(){
-  if (!YT || !YT.ch) return '';
-  const c = YT.ch, days = Object.keys(YT.chDaily||{}).sort().slice(-30);
-  const books = Object.entries(YT.books||{}).filter(([,v])=>v.n).sort((a,b)=>b[1].views-a[1].views);
+function ytChannelBlock(Y, ch){
+  Y = Y || YT; ch = ch || 'Y';
+  if (!Y || !Y.ch) return '';
+  const c = Y.ch, days = Object.keys(Y.chDaily||{}).sort().slice(-30);
+  const books = Object.entries(Y.books||{}).filter(([,v])=>v.n).sort((a,b)=>b[1].views-a[1].views);
   return '<div class="sec">' + sech('유튜브 채널',
       '<a href="'+esc(c.url)+'" target="_blank" rel="noopener">'+esc(c.title)+' '+esc(c.handle)+'</a>'
       + ' · 우리 책을 알리는 자사 채널',
-      YT.through ? YT.through+'까지 집계' : '')
+      Y.through ? Y.through+'까지 집계' : '')
     + '<div class="tiles">'
     + tile('구독자', cmp(c.subs)+'명', c.subsApprox?'유튜브가 반올림해 줍니다':'')
     + tile('올린 영상', nf(c.videos)+'건', '책 관련 '+nf(sum(books.map(b=>b[1].n)))+'건')
@@ -941,8 +947,8 @@ function ytChannelBlock(){
         cmp(v.views)+'회', nf(v.n)+'건 · 좋아요 '+nf(v.likes))).join('')
     + '</div>'
     + (days.length ? '<div class="chart"><div class="legend">'
-        + '<span><i style="background:'+CHC.Y+'"></i>채널 전체 · 날마다 조회수</span></div>'
-        + stackChart(days, [{name:'채널 조회', c:CHC.Y, vals:days.map(d=>(YT.chDaily[d]||[0])[0]||0)}], {h:200})
+        + '<span><i style="background:'+CHC[ch]+'"></i>채널 전체 · 날마다 조회수</span></div>'
+        + stackChart(days, [{name:'채널 조회', c:CHC[ch], vals:days.map(d=>(Y.chDaily[d]||[0])[0]||0)}], {h:200})
         + '</div>' : '')
     + '</div>';
 }
@@ -972,7 +978,8 @@ function chanBars(rows){
 function chanSummaryBlock(k){
   const b = D.books[k];
   const ig = b.igPosts||[], fb = b.fbPosts||[];
-  const yb = (YT && YT.books) ? YT.books[k] : null;
+  const yb  = (YT  && YT.books)  ? YT.books[k]  : null;
+  const yb2 = (YT2 && YT2.books) ? YT2.books[k] : null;
   const rows = [
     {ch:'B', name:(IGACC.B||'북타쿠')+' (인스타)', c:CHC.B,
      n:ig.filter(p=>p[1]==='B').length, v:sum(ig.filter(p=>p[1]==='B').map(p=>p[3]))},
@@ -981,6 +988,8 @@ function chanSummaryBlock(k){
     {ch:'F', name:(META.fbPage||'1분 지혜')+' (페북)', c:CHC.F, n:fb.length, v:sum(fb.map(p=>p[2]))},
     {ch:'Y', name:(YT&&YT.ch?YT.ch.title:'유튜브')+' (유튜브)', c:CHC.Y,
      n:yb?yb.n:0, v:yb?yb.views:0},
+    {ch:'Y2', name:(YT2&&YT2.ch?YT2.ch.title:'1분수업')+' (유튜브)', c:CHC.Y2,
+     n:yb2?yb2.n:0, v:yb2?yb2.views:0},
   ].map(r => Object.assign(r, {cl: chanLink(k, r.ch)})).filter(r => r.n || r.cl);
   if (!rows.length) return '';
 
@@ -1611,6 +1620,7 @@ function select(k){
 
     h += adBlock(D.order, true);
     h += ytChannelBlock();
+    h += ytChannelBlock(YT2, 'Y2');
     h += volaBlock('all');
     h += econBlock();
 
@@ -1658,6 +1668,7 @@ function select(k){
     h += igBlock(k, 'P');
     h += fbBlock(k);
     h += ytBlock(k);
+    h += ytBlock(k, YT2, 'Y2');
     h += volaBlock(k);
   }
   h += freshBlock();

@@ -32,7 +32,8 @@ BOOK_KEYS = ('title', 'short', 'pub', 'hasYp', 'sales', 'daily', 'monthly', 'ads
 #             거기 얹어 두면 다시 만들 때마다 따라온다 (tools/set_ads_week.py 로 넣는다)
 #   ytCollab— 다른 채널과 한 협업·협찬 영상 (썸네일 포함). 다른 세션이 채워 넣는다.
 #   covers  — 책 표지 (base64). 아티팩트는 외부 이미지를 막으므로 심어야 뜬다.
-WHOLE = ('econ', 'volaDaily', 'ytData', 'igExtra', 'igFollow', 'adThumb', 'thumbs',
+#   ytData2 — 두 번째 유튜브 채널(1분수업). ytData 와 같은 모양이라 같은 함수가 그린다.
+WHOLE = ('econ', 'volaDaily', 'ytData', 'ytData2', 'igExtra', 'igFollow', 'adThumb', 'thumbs',
          'adsWeek', 'ytCollab', 'covers')
 
 # 정가와 공급률은 어느 원천에도 없다 — 계약 조건이라 사람이 적어 두는 값이다.

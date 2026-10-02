@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""「1분지혜」 유튜브 수집기 — 클라우드 루틴용
+"""유튜브 채널 수집기 — 클라우드 루틴용
 
-    python3 youtube.py <html경로>
+    python3 youtube.py <html경로>                                    # 1분지혜 → ytData
+    python3 youtube.py --channel @1min_th1 --block ytData2 <html경로>  # 1분수업 → ytData2
 
-<html경로> 안의 <script id="ytData"> 블록을 갈아끼운다. 표준 라이브러리만 쓴다.
+<html경로> 안의 <script id="ytData"> (또는 --block 으로 지정한) 블록을 갈아끼운다.
+채널은 id(UC...) 로도 핸들(@이름) 로도 줄 수 있다. 블록이 없으면 새로 만든다. 표준 라이브러리만 쓴다.
 로그인·자격증명·개인 API 키를 쓰지 않는다 — 공개 페이지만 본다.
 
 설계 원칙은 tools/ranks.py 와 같다 — **실패해도 절대 배포를 막지 않는다.**
@@ -51,8 +53,18 @@
 """
 import sys, os, json, re, gzip, zlib, time, datetime, urllib.request, urllib.error
 
+# 기본은 「1분지혜」. --channel 로 다른 채널을 받을 수 있다 — 채널 id(UC...) 든
+# 핸들(@1min_th1) 이든 된다. 받은 값을 어느 블록에 넣을지는 --block 으로 정한다.
+# 채널마다 블록을 따로 두는 까닭 — 한 블록에 섞으면 「우리 채널 조회수」가 두 채널
+# 합이 되어, 어느 채널이 일하고 있는지 알 수 없게 된다.
 CHANNEL_ID = 'UC_eCtsz2CxxDgTzev6kroOQ'
+BLOCK_ID = 'ytData'
 OPEN = '<script id="ytData" type="application/json">'
+
+
+def chan_path():
+    """채널 주소의 앞부분. 핸들은 그대로, id 는 channel/ 을 붙인다."""
+    return CHANNEL_ID if CHANNEL_ID.startswith('@') else 'channel/' + CHANNEL_ID
 
 UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36')
@@ -449,7 +461,7 @@ def find_continuation(node):
 
 def collect_grid(tube, tab, is_shorts_tab, today, log):
     """한 탭을 끝까지(또는 PAGE_CAP 까지) 받아 영상 목록을 돌려준다."""
-    url = 'https://www.youtube.com/channel/%s/%s' % (CHANNEL_ID, tab)
+    url = 'https://www.youtube.com/%s/%s' % (chan_path(), tab)
     html = http(url)
     if not tube.key:
         tube.boot(html)
@@ -484,7 +496,7 @@ def collect_grid(tube, tab, is_shorts_tab, today, log):
 
 def about_channel(log):
     """구독자 · 영상 수 · 총 조회수. 못 읽은 값은 None 으로 둔다 (지어내지 않는다)."""
-    html = http('https://www.youtube.com/channel/%s/about' % CHANNEL_ID)
+    html = http('https://www.youtube.com/%s/about' % chan_path())
     data = grab(html, 'ytInitialData')
     out = {'title': None, 'handle': None, 'subs': None, 'subsApprox': True,
            'videos': None, 'views': None}
@@ -770,11 +782,24 @@ def collect(log):
 
 
 def main():
+    global CHANNEL_ID, BLOCK_ID, OPEN
+    argv = sys.argv[1:]
+    rest = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == '--channel' and i + 1 < len(argv):
+            CHANNEL_ID = argv[i + 1]; i += 2
+        elif argv[i] == '--block' and i + 1 < len(argv):
+            BLOCK_ID = argv[i + 1]; i += 2
+        else:
+            rest.append(argv[i]); i += 1
+    OPEN = '<script id="%s" type="application/json">' % BLOCK_ID
+    sys.argv = [sys.argv[0]] + rest
     if len(sys.argv) < 2:
         print('SKIP 대상 html 경로가 없습니다')
         return 0
     if sys.argv[1] == '--dump':                     # 마크업이 바뀌었을 때 들여다보는 구멍
-        html = http('https://www.youtube.com/channel/%s/videos' % CHANNEL_ID)
+        html = http('https://www.youtube.com/%s/videos' % chan_path())
         d = grab(html, 'ytInitialData') or {}
         import collections
         c = collections.Counter()
@@ -800,8 +825,16 @@ def main():
         return 0
     s = html.find(OPEN)
     if s < 0:
-        print('SKIP ytData 블록이 없습니다 — 유튜브는 건너뜁니다')
-        return 0
+        # 두 번째 채널을 처음 받을 때는 블록이 아직 없다. 첫 블록 앞에 빈 껍데기를
+        # 끼워 넣고 이어간다. 끼울 자리를 못 찾으면 건드리지 않는다.
+        anchor = html.find('<script id="payload" type="application/json">')
+        if anchor < 0:
+            print('SKIP %s 블록이 없고 끼울 자리도 못 찾았습니다 — 건너뜁니다' % BLOCK_ID)
+            return 0
+        html = html[:anchor] + OPEN + '{}</script>\n' + html[anchor:]
+        open(src, 'w', encoding='utf-8').write(html)
+        print('%s 블록을 새로 만들었습니다' % BLOCK_ID)
+        s = html.find(OPEN)
     e = html.find('</script>', s)
     try:
         prev = json.loads(html[s + len(OPEN):e]) or {}
@@ -848,7 +881,7 @@ def main():
     out['ch'] = {
         'title': ch['title'] or (prev.get('ch') or {}).get('title'),
         'handle': ch['handle'] or (prev.get('ch') or {}).get('handle'),
-        'url': 'https://www.youtube.com/channel/' + CHANNEL_ID,
+        'url': 'https://www.youtube.com/' + chan_path(),
         'subs': ch['subs'] if ch['subs'] is not None else (prev.get('ch') or {}).get('subs'),
         'videos': ch['videos'] if ch['videos'] is not None else (prev.get('ch') or {}).get('videos'),
         'views': ch['views'] if ch['views'] is not None else (prev.get('ch') or {}).get('views'),
