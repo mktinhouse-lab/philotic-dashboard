@@ -73,7 +73,8 @@ UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
 # 있어서 둘 다 받고 id 로 합친다. 쇼츠 여부는 어느 탭에서 왔는지로 가른다.
 TABS = [('videos', False), ('shorts', True)]
 
-MIN_WANT = 60          # 최소 이만큼은 받아야 한다 (못 받으면 받은 만큼 쓰고 보고한다)
+MIN_WANT = 60          # 큰 채널이 잘렸는지 보는 기준 (채널이 가진 영상이 이보다
+                       # 적으면 그 수까지만 요구한다 — 아래 want 를 보라)
 PAGE_CAP = 12          # 탭별 이어받기 횟수 상한 — 무한루프 방지
 DETAIL_CAP = 400       # 영상 상세를 받아 올 최대 편수
 DETAIL_PAUSE = 0.15    # 상세 요청 사이 숨 고르기
@@ -934,6 +935,11 @@ def main():
 
     # ── 검증 — 하나라도 어긋나면 블록을 바꾸지 않는다 ──
     kal_old = (prev_books.get('kaljung') or {}).get('n') or 0
+    # 목표 편수는 '큰 채널이 중간에 잘렸다'를 잡는 장치다. 채널이 가진 영상이 목표보다
+    # 적으면(1분수업은 5편뿐) 아무리 다 받아도 걸리기만 해서 블록이 영원히 {} 로 남는다.
+    # 그래서 채널이 밝힌 영상 수까지만 요구한다. 영상 수를 못 읽었으면 원래대로 엄격히 본다.
+    ch_n = ch['videos'] if ch['videos'] is not None else (prev.get('ch') or {}).get('videos')
+    want = min(MIN_WANT, ch_n) if ch_n else MIN_WANT
     block = OPEN + json.dumps(out, ensure_ascii=False) + '</script>'
     doc = html[:s] + block + html[e + len('</script>'):]
     checks = {
@@ -944,13 +950,13 @@ def main():
         'ytData 1회': doc.count(OPEN) == 1,
         '영상수 안 줄었다': total_n >= old_tot,
         '칼융 %d편 이상' % kal_old: books['kaljung']['n'] >= kal_old,
-        '목표 편수 확보': total_n >= MIN_WANT,
+        '목표 편수 확보(%d편)' % want: total_n >= want,
         '누적 조회 > 0': views_sum > 0,
         '길이': len(doc) > 100000,
     }
     log('  검증: %s' % checks)
     if not all(checks.values()):
-        print('SKIP 검증 실패 — ytData 블록을 바꾸지 않습니다')
+        print('SKIP 검증 실패 — %s 블록을 바꾸지 않습니다' % BLOCK_ID)
         return 1
     out['lastTry'] = {'at': out['collected'], 'ok': True, 'why': ''}
     block = OPEN + json.dumps(out, ensure_ascii=False) + '</script>'
