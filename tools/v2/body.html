@@ -599,7 +599,7 @@ function weekBlock(keys, isAll){
     if (yv.length) lanes.push({name:(Y.ch?Y.ch.title:'유튜브')+' (유튜브)', c:i?CHC.Y2:CHC.Y, n:yv.length,
       views:sum(yv.map(v=>v[4])),
       items: yv.slice(0,8).map(v => ({url:'https://www.youtube.com/'+(v[8]?'shorts/':'watch?v=')+v[1],
-        img:(TH.yt||{})[v[1]]||'https://i.ytimg.com/vi/'+v[1]+'/hqdefault.jpg',
+        img:(TH.yt||{})[v[1]] || null,   /* 바깥 주소로 되돌아가면 깨진 그림이 된다 */
         main:cmp(v[4])+' 조회', sub:String(v[3]).slice(5)+' · 좋아요 '+nf(v[5]),
         alt:String(v[2]).slice(0,24)}))});
   });
@@ -896,7 +896,7 @@ function ytBlock(k, Y, ch){
     + '<td style="text-align:left"><a href="'+vurl(v)+'" target="_blank" rel="noopener">'+esc(v[1])+' ↗</a></td></tr>'; };
   const pane = list => !list.length ? '' :
       strip(list.slice(0,10).map(v => { const g = got(v);
-        return {url:vurl(v), img:(TH.yt||{})[v[0]]||'https://i.ytimg.com/vi/'+v[0]+'/hqdefault.jpg',
+        return {url:vurl(v), img:(TH.yt||{})[v[0]] || null,
         main:cmp(v[3])+' 조회',
         sub:String(v[2]).slice(2)+(g ? ' · 데려옴 '+nf(g.n) : ' · 좋아요 '+nf(v[4])),
         alt:String(v[1]).slice(0,24) }; }))
@@ -1045,11 +1045,12 @@ function chanSummaryBlock(k){
 function adVideoCard(v){
   const cl = sum((v.links||[]).map(l => l[2]));
   const links = (v.links||[]).filter(l=>l[2]>0).sort((a,b)=>b[2]-a[2]);
-  const thumb = v.thumb || 'https://i.ytimg.com/vi/'+v.id+'/hqdefault.jpg';
+  const thumb = v.thumb || (TH.yt||{})[v.id] || null;
   return '<div class="adv">'
     + '<div class="advplay" data-yt="'+esc(v.id)+'" role="button" tabindex="0" '
     +      'aria-label="영상 재생">'
-    +   '<img src="'+thumb+'" alt="" loading="lazy">'
+    +   (thumb ? '<img src="'+thumb+'" alt="" loading="lazy">'
+          : '<div class="alt"><b>▶</b><i>'+esc(v.title||'')+'</i></div>')
     +   '<span class="pbtn" aria-hidden="true">▶</span>'
     +   (v.dur ? '<span class="dur">'+esc(v.dur)+'</span>' : '')
     + '</div>'
