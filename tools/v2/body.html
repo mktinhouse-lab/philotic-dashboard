@@ -1079,7 +1079,7 @@ function collabBlock(k){
   const vids = (C.videos || []).filter(v => k === 'all' || bookOf(v) === k);
   const soon = (C.upcoming || []).filter(u => k === 'all' || (u.book || C.book) === k);
   if (!vids.length && !soon.length) return '';
-  const clicksOf = v => sum((v.links||[]).map(l => l[2]));
+  const clicksOf = v => sum((v.links||[]).map(linkClicks));
 
   let h = '<div class="sec">' + sech('외부 광고 영상',
       '유튜버에게 맡긴 것 · 조회수는 그 채널 몫이고 <b>넘어온 사람 수</b>가 우리 몫입니다',
@@ -1219,7 +1219,7 @@ function selectCollab(){
   const C = D.ytCollab || {};
   const vids = (C.videos||[]).slice().sort((a,b)=>(b.views||0)-(a.views||0));
   const soon = C.upcoming || [];
-  const clicksOf = v => sum((v.links||[]).map(l => l[2]));
+  const clicksOf = v => sum((v.links||[]).map(linkClicks));
   const measurable = vids.filter(v => (v.links||[]).length);
   const views = sum(vids.map(v=>v.views)), clicks = sum(vids.map(clicksOf));
   const mViews = sum(measurable.map(v=>v.views));
