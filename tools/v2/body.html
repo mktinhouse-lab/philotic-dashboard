@@ -1040,9 +1040,18 @@ function chanSummaryBlock(k){
    유튜버에게 돈을 주고 맡긴 영상이다. 우리 채널이 아니므로 조회수는 그 채널 것이고,
    우리 몫은 **거기서 책 페이지로 넘어온 사람 수**뿐이다. 그래서 클릭을 본론으로 둔다.
    영상마다 book 을 달 수 있고, 없으면 블록 전체의 book 을 쓴다(옛 자료 호환). */
+/* 짧은 링크 하나의 클릭수.
+   예전에는 블록에 적힌 숫자(l[2])를 그대로 썼다 — 사람이 볼라 화면에서 베껴 넣는 값이라
+   영상이 늘 때마다 손이 갔고, 베낀 날에 멈춰 있었다. 이제 볼라가 매일 받아 오는
+   누적(VL.total)을 먼저 보고, 거기 없는 링크만 적힌 값으로 떨어진다. */
+function linkClicks(l){
+  const t = (VL && VL.total) ? VL.total[l[0]] : null;
+  return t != null ? t : (+l[2] || 0);
+}
 function adVideoCard(v){
-  const cl = sum((v.links||[]).map(l => l[2]));
-  const links = (v.links||[]).filter(l=>l[2]>0).sort((a,b)=>b[2]-a[2]);
+  const cl = sum((v.links||[]).map(linkClicks));
+  const links = (v.links||[]).map(l => [l[0], l[1], linkClicks(l)])
+      .filter(l => l[2] > 0).sort((a,b) => b[2]-a[2]);
   const thumb = v.thumb || (TH.yt||{})[v.id] || null;
   return '<div class="adv">'
     + '<div class="advplay" data-yt="'+esc(v.id)+'" role="button" tabindex="0" '
