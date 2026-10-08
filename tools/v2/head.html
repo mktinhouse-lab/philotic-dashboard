@@ -119,6 +119,13 @@ header nav button[aria-selected="true"]{color:var(--ink);font-weight:700;border-
 .kpi .big{font-size:29px;font-weight:700;letter-spacing:-.025em;line-height:1.15;margin-top:9px}
 .kpi .big small{font-size:15px;font-weight:500;color:var(--ink2);margin-left:2px}
 .kpi .foot{font-size:12px;color:var(--ink2);margin-top:5px}
+/* 판매 한눈에 — 책 탭에서 제일 먼저 읽히는 세 숫자. 돈 네 칸과 덩치가 같으면
+   눈이 어디서 멈출지 모른다. 옛 대시보드의 hero 와 같은 크기로 둔다. */
+.kpis.hero .kpi{padding:19px 20px 20px}
+.kpis.hero .kpi .big{font-size:46px;margin-top:7px}
+.kpis.hero .kpi .big small{font-size:20px}
+.kpis.hero .kpi .lab{font-size:13px}
+.kpis.hero .kpi .foot{font-size:12.5px;margin-top:7px}
 .up{color:var(--good);font-weight:500} .down{color:var(--bad);font-weight:500}
 
 /* ── 표 ── */
@@ -169,10 +176,10 @@ svg{display:block;width:100%;height:auto;overflow:visible}
   background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
 .rk{background:var(--surface);padding:14px 15px;text-align:center}
 .rk .lab{font-size:11.5px;color:var(--ink2);font-weight:500;min-height:32px;display:flex;align-items:center;justify-content:center}
-.rk .v{font-size:25px;font-weight:700;letter-spacing:-.02em;margin-top:4px}
-.rk .v small{font-size:13px;font-weight:500;color:var(--ink2)}
+.rk .v{font-size:33px;font-weight:700;letter-spacing:-.025em;margin-top:5px}
+.rk .v small{font-size:15px;font-weight:500;color:var(--ink2)}
 .rk .d{font-size:11.5px;margin-top:3px;color:var(--ink3)}
-.rk.out .v{font-size:15px;font-weight:500;color:var(--ink3)}
+.rk.out .v{font-size:16px;font-weight:500;color:var(--ink3)}
 
 /* ── 펀딩 ── */
 .fund{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,auto);gap:24px;align-items:center}
@@ -316,6 +323,8 @@ details.more[open] summary{margin-bottom:8px}
 @media(max-width:600px){
   h1{font-size:17px}
   .kpi .big{font-size:25px}
+  .kpis.hero .kpi .big{font-size:34px}
+  .rk .v{font-size:26px}
   .wrap{padding-inline:16px}
   header{padding-inline:16px}
 }

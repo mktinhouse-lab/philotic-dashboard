@@ -299,8 +299,10 @@ function glanceBlock(k){
   const avg = w.cur / Math.min(7, sales.length);
   const pavg = w.prev / 7;
   const gap = l.v - l.prev;
+  /* hero — 이 세 숫자가 책 탭에서 제일 먼저 읽히는 자리다. 돈 네 칸과 같은 덩치면
+     눈이 어디서 멈춰야 할지 모른다. 레퍼런스(옛 대시보드)처럼 한 단 키운다. */
   return '<div class="sec">' + sech('판매 한눈에', esc(l.date)+' 까지 들어온 자료 기준')
-    + '<div class="kpis">'
+    + '<div class="kpis hero">'
     + kpi('하루', nf(l.v), '부',
           l.prev ? (gap>=0?'<span class="up">▲ '+nf(gap)+'부</span>'
                           :'<span class="down">▼ '+nf(-gap)+'부</span>')
@@ -1673,8 +1675,8 @@ function select(k){
           '<span><i style="background:'+BC[x]+'"></i>'+esc(D.books[x].short)+'</span>').join('') + '</div>'
       + stackChart(days, byBook, {h:250}) + '</div></div>';
 
-    top = tbl;
-    h = dailyAll + trafficSummaryBlock(keys) + h;
+    top = tbl + dailyAll;
+    h = trafficSummaryBlock(keys) + h;
 
     /* 서점 비중 */
     const rows30 = D.order.flatMap(x => D.books[x].sales.filter(r => r[0] >= days[0]));
@@ -1704,14 +1706,14 @@ function select(k){
       + stackChart(days, byStore, {h:250, line:{vals:days.map(d=>adMap.get(d)||0), c:'var(--bad)'}})
       + '</div></div>';
 
-    /* 윗칸 — 어느 책인지, 몇 등인지, 몇 권 팔렸는지. 돈 네 칸은 이 바로 밑에 붙는다.
-       일별 판매는 그 아래다. 그 그래프의 빨간 선이 광고비라, 광고비 칸을 먼저 보고
-       내려오는 편이 읽힌다. */
+    /* 윗칸 — 어느 책인지, 몇 등인지, 몇 권 팔렸는지, 어디서 팔렸는지.
+       「판매 한눈에」와 일별 판매는 붙어 있어야 한다 — 큰 숫자를 보고 바로 그
+       그래프에서 그 숫자가 어느 막대인지 찾는 순서다. 돈 네 칸은 그 뒤다. */
     top = bookHead(k)
       + rankBlock(k) + rankTrendBlock(k)
-      + glanceBlock(k);
-    h = dailySales
-      + chanSummaryBlock(k)
+      + glanceBlock(k)
+      + dailySales;
+    h = chanSummaryBlock(k)
       + volaBlock(k)
       + h;
 
