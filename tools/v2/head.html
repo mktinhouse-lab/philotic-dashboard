@@ -103,6 +103,8 @@ header nav button[aria-selected="true"]{color:var(--ink);font-weight:700;border-
 
 /* ── 구획 ── */
 .sec{margin-top:30px}
+/* 윗칸이 비는 탭(협업·요약)에서는 돈 네 칸이 맨 위로 붙는다 */
+#viewTop:empty+#kpisec{margin-top:0}
 .sech{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap}
 .sech h2{font-size:15px;font-weight:700;letter-spacing:-.01em;margin:0}
 .sech p{margin:0;font-size:12.5px;color:var(--ink2)}

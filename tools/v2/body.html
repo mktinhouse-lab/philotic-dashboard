@@ -13,7 +13,11 @@
  <div class="shell">
   <aside id="side"><nav id="sidenav"></nav></aside>
   <main id="main">
-  <div class="sec" style="margin-top:0">
+  <!-- 윗칸 — 책을 알아보는 데 먼저 필요한 것(등수·추이·판매 한눈에)이 여기 들어간다.
+       돈 네 칸(아래 #kpisec)은 그 뒤에 온다. 「몇 권 팔렸나」를 보고 나서 「그래서 얼마」를
+       보는 순서다. 탭에 따라 비어 있을 수 있고, 비면 CSS 가 아래 칸을 맨 위로 붙인다. -->
+  <div id="viewTop"></div>
+  <div class="sec" id="kpisec">
     <div class="seg" id="kpiwin" role="tablist" hidden></div>
     <div class="kpis" id="kpis"></div>
     <p class="note" id="kpiNote"></p>
@@ -1308,6 +1312,7 @@ function selectCollab(){
 
   const h = collabBlock('all');
 
+  document.getElementById('viewTop').innerHTML = '';
   document.getElementById('view').innerHTML = h;
   layout();
   scrollTo({top:0, behavior:'smooth'});
@@ -1592,6 +1597,7 @@ function selectSummary(){
   h += trafficSummaryBlock(keys);
   h += launchBlock();
   h += freshBlock();
+  document.getElementById('viewTop').innerHTML = '';
   document.getElementById('view').innerHTML = h;
   layout();
   scrollTo({top:0, behavior:'smooth'});
@@ -1610,6 +1616,7 @@ function select(k){
   kwinEl.hidden = false;
   drawKpis();
 
+  let top = '';
   let h = (isAll ? todoBlock(keys) : '') + weekBlock(keys, isAll);
 
   if (isAll){
@@ -1666,7 +1673,8 @@ function select(k){
           '<span><i style="background:'+BC[x]+'"></i>'+esc(D.books[x].short)+'</span>').join('') + '</div>'
       + stackChart(days, byBook, {h:250}) + '</div></div>';
 
-    h = tbl + dailyAll + trafficSummaryBlock(keys) + h;
+    top = tbl;
+    h = dailyAll + trafficSummaryBlock(keys) + h;
 
     /* 서점 비중 */
     const rows30 = D.order.flatMap(x => D.books[x].sales.filter(r => r[0] >= days[0]));
@@ -1696,12 +1704,13 @@ function select(k){
       + stackChart(days, byStore, {h:250, line:{vals:days.map(d=>adMap.get(d)||0), c:'var(--bad)'}})
       + '</div></div>';
 
-    /* 맨 위 세 덩어리 — 순위 · 판매 · 어디서 들어왔나.
-       나머지(이번 주·광고·콘텐츠)는 그 아래로 내린다. */
-    h = bookHead(k)
+    /* 윗칸 — 어느 책인지, 몇 등인지, 몇 권 팔렸는지. 돈 네 칸은 이 바로 밑에 붙는다.
+       일별 판매는 그 아래다. 그 그래프의 빨간 선이 광고비라, 광고비 칸을 먼저 보고
+       내려오는 편이 읽힌다. */
+    top = bookHead(k)
       + rankBlock(k) + rankTrendBlock(k)
-      + glanceBlock(k)
-      + dailySales
+      + glanceBlock(k);
+    h = dailySales
       + chanSummaryBlock(k)
       + volaBlock(k)
       + h;
@@ -1733,6 +1742,7 @@ function select(k){
     h += ytBlock(k, YT2, 'Y2');
   }
   h += freshBlock();
+  document.getElementById('viewTop').innerHTML = top;
   document.getElementById('view').innerHTML = h;
   layout();
   scrollTo({top:0, behavior:'smooth'});
