@@ -253,6 +253,46 @@ const RANK_LABEL = {
   totalWeeklyCat:'전국 매장 포함<br>분야 한 주 등수',
   realtime:'지금 이 시각<br>실시간 등수',
 };
+/* 교보 일간 순위 한 칸 — 등수와 전날 대비. 500위 밖이면 그렇게 적는다.
+   순위는 「지금 어디쯤인가」를 한 글자로 말해 주는 유일한 바깥 잣대라 표 맨 앞에 둔다. */
+function rankCell(k){
+  const R = D.ranks[k]; if (!R) return '<span class="muted">—</span>';
+  const o = (R.ranks || {}).onlineDaily;
+  if (!o || o.rank == null) return '<span class="muted">500위 밖</span>';
+  let d = '';
+  if (o.prev === 0) d = ' <span class="up">새로 진입</span>';
+  else if (o.prev != null){
+    const g = o.prev - o.rank;
+    d = g === 0 ? ' <span class="muted">—</span>'
+      : ' <span class="'+(g>0?'up':'down')+'">'+(g>0?'▲':'▼')+nf(Math.abs(g))+'</span>';
+  }
+  return '<b>'+nf(o.rank)+'</b>위' + d;
+}
+
+/* ── 판매 한눈에 ──
+   커머스팀이 쓰는 모양을 그대로 따른다: 어제 몇 부 · 지금까지 몇 부 · 요즘 하루 몇 부.
+   위의 큰 숫자 줄은 「고른 기간의 합」이라 성격이 다르다 — 여기는 책 하나의 속도를 본다. */
+function glanceBlock(k){
+  const b = D.books[k], sales = b.sales || [];
+  if (!sales.length) return '';
+  const l = lastDay(k), w = last7(k), a = agg(k);
+  const avg = w.cur / Math.min(7, sales.length);
+  const pavg = w.prev / 7;
+  const gap = l.v - l.prev;
+  return '<div class="sec">' + sech('판매 한눈에', esc(l.date)+' 까지 들어온 자료 기준')
+    + '<div class="kpis">'
+    + kpi('최근 기록일 판매', nf(l.v), '부',
+          l.prev ? (gap>=0?'<span class="up">▲ '+nf(gap)+'부</span>'
+                          :'<span class="down">▼ '+nf(-gap)+'부</span>')
+                   + ' <span class="muted">전날 '+nf(l.prev)+'부</span>'
+                 : '<span class="muted">전날 자료 없음</span>')
+    + kpi('누적 판매', nf(a.units), '부', esc(String(b.pub).replace(/-/g,'.'))+' 부터')
+    + kpi('최근 7일 일평균', avg.toFixed(1), '부',
+          pavg ? delta(avg, pavg) + ' <span class="muted">직전 7일 '+pavg.toFixed(1)+'부</span>'
+               : '<span class="muted">직전 7일 자료 없음</span>')
+    + '</div></div>';
+}
+
 function rankBlock(k){
   const R = D.ranks[k]; if (!R) return '';
   const r = R.ranks || {}, wb = R.weeklyBest || {};
@@ -1555,27 +1595,37 @@ function select(k){
   let h = (isAll ? todoBlock(keys) : '') + weekBlock(keys, isAll);
 
   if (isAll){
-    /* 책별 표 */
-    h += '<div class="sec"><div class="sech"><h2>책별 현황</h2><p>최근 30일 흐름과 누적</p></div>'
+    /* 도서별 현황 — 맨 위. 보고할 때 가장 먼저 보는 것이 「어제 몇 권, 어디서」라서
+       순위 · 어제 · 7일 일평균 · 누적을 한 줄에 놓고 나머지(돈)는 뒤로 민다. */
+    const lastSale = D.order.map(x => (lastDay(x).date||'')).sort().pop();
+    const tbl = '<div class="sec">' + sech('도서별 현황',
+        '교보 일간 순위 · 어제 · 요즘 하루 · 누적'
+        + (lastSale ? ' <span class="muted">판매 '+esc(lastSale)+' 기준</span>' : ''))
       + '<div class="panel scroll"><table><thead><tr>'
-      + '<th>책</th><th>최근 30일<span class="t2">흐름</span></th>'
-      + '<th>마지막날<span class="t2">판매</span></th><th>7일<span class="t2">합계</span></th>'
-      + '<th>이번 달<span class="t2">판매</span></th><th>누적<span class="t2">판매</span></th>'
+      + '<th style="text-align:left">책</th><th>교보 일간<span class="t2">전날 대비</span></th>'
+      + '<th>어제<span class="t2">판 권수</span></th><th>최근 7일<span class="t2">하루 평균</span></th>'
+      + '<th>누적<span class="t2">판 권수</span></th><th>최근 30일<span class="t2">흐름</span></th>'
+      + '<th>이번 달<span class="t2">판매</span></th>'
       + '<th>들어온 돈<span class="t2">누적</span></th><th>광고비<span class="t2">누적</span></th>'
       + '<th>한 권당<span class="t2">광고비</span></th></tr></thead><tbody>'
       + D.order.map(x => {
           const b = D.books[x], a = agg(x), mm = agg(x, MONTH+'-01'), l = lastDay(x), s7 = last7(x);
+          const avg = s7.cur / Math.min(7, b.sales.length || 1);
+          const gap = l.v - l.prev;
           const sp = b.sales.slice(-30).map(sold);
           const cv = ((D.covers||{}).img||{})[x];
-          return '<tr><td><div class="bk" style="--bc:'+BC[x]+'"><i></i>'
+          return '<tr><td style="text-align:left"><div class="bk" style="--bc:'+BC[x]+'"><i></i>'
                + (cv ? '<img class="minicov" src="'+cv+'" alt="" loading="lazy">' : '')
                + '<span>'+esc(b.short)
                + '<small>출간 '+esc(b.pub.slice(2).replace(/-/g,'.'))+'</small></span></div></td>'
-               + '<td>'+spark(sp, BC[x], 110, 26)+'</td>'
-               + '<td class="big">'+nf(l.v)+'</td>'
-               + '<td>'+nf(s7.cur)+'</td>'
-               + '<td>'+nf(mm.units)+'</td>'
+               + '<td>'+rankCell(x)+'</td>'
+               + '<td class="big">'+nf(l.v)
+               + (l.prev ? '<span class="t2 '+(gap>=0?'up':'down')+'">'
+                           + (gap>=0?'▲':'▼')+nf(Math.abs(gap))+'</span>' : '')+'</td>'
+               + '<td class="big">'+avg.toFixed(1)+'</td>'
                + '<td class="big">'+nf(a.units)+'</td>'
+               + '<td>'+spark(sp, BC[x], 110, 26)+'</td>'
+               + '<td>'+nf(mm.units)+'</td>'
                + '<td>'+won(a.revenue)+'</td>'
                + '<td>'+won(a.spend)+'</td>'
                + '<td>'+(a.units? nf(a.per)+'원' : '<span class="muted">—</span>')+'</td></tr>'; }).join('')
@@ -1587,10 +1637,13 @@ function select(k){
       const map = new Map(D.books[x].sales.map(r=>[r[0], sold(r)]));
       return {name:D.books[x].short, c:BC[x], vals:days.map(d=>map.get(d)||0)};
     });
-    h += '<div class="sec"><div class="sech"><h2>일별 판매</h2><p>최근 30일 · 색은 책</p></div>'
+    const dailyAll = '<div class="sec"><div class="sech"><h2>일별 판매</h2>'
+      + '<p>어디서 팔렸나 · 최근 30일 · 색은 책</p></div>'
       + '<div class="chart"><div class="legend">' + D.order.map(x =>
           '<span><i style="background:'+BC[x]+'"></i>'+esc(D.books[x].short)+'</span>').join('') + '</div>'
       + stackChart(days, byBook, {h:250}) + '</div></div>';
+
+    h = tbl + dailyAll + trafficSummaryBlock(keys) + h;
 
     /* 서점 비중 */
     const rows30 = D.order.flatMap(x => D.books[x].sales.filter(r => r[0] >= days[0]));
@@ -1605,27 +1658,35 @@ function select(k){
 
   } else {
     const b = D.books[k];
-    h = bookHead(k) + h;
     const days = b.sales.map(r=>r[0]).slice(-45);
     const inWin = b.sales.filter(r => r[0] >= days[0]);
     const byStore = STORES.map(s => ({name:s.name, c:s.c,
         vals:days.map(d => { const r = inWin.find(x=>x[0]===d); return r ? Math.max(0,+r[s.i]||0) : 0; })}))
       .filter(s => s.vals.some(v=>v>0));
     const adMap = new Map((b.daily||[]).map(r=>[r[0], +r[1]||0]));
-    h += '<div class="sec"><div class="sech"><h2>일별 판매</h2>'
-      + '<p>최근 '+days.length+'일 · 색은 서점 · <span style="color:var(--bad)">빨간 선</span>은 그날 쓴 광고비</p></div>'
+    const dailySales = '<div class="sec"><div class="sech"><h2>일별 판매</h2>'
+      + '<p>어디서 팔렸나 · 최근 '+days.length+'일 · 색은 서점 · '
+      + '<span style="color:var(--bad)">빨간 선</span>은 그날 쓴 광고비</p></div>'
       + '<div class="chart"><div class="legend">' + byStore.map(s =>
           '<span><i style="background:'+s.c+'"></i>'+esc(s.name)+'</span>').join('')
       + '<span><i style="background:var(--bad)"></i>광고비</span></div>'
       + stackChart(days, byStore, {h:250, line:{vals:days.map(d=>adMap.get(d)||0), c:'var(--bad)'}})
       + '</div></div>';
 
+    /* 맨 위 세 덩어리 — 순위 · 판매 · 어디서 들어왔나.
+       나머지(이번 주·광고·콘텐츠)는 그 아래로 내린다. */
+    h = bookHead(k)
+      + rankBlock(k) + rankTrendBlock(k)
+      + glanceBlock(k)
+      + dailySales
+      + chanSummaryBlock(k)
+      + volaBlock(k)
+      + h;
+
     h += '<div class="sec"><div class="sech"><h2>서점별 판매</h2><p>전 기간 합계</p></div>'
       + '<div class="panel" style="padding:18px 20px">' + mixBlock(b.sales) + '</div></div>';
 
     h += fundBlock(k);
-    h += rankBlock(k);
-    h += rankTrendBlock(k);
     h += eventBlock(k);
     h += adBlock([k], false);
 
@@ -1642,13 +1703,11 @@ function select(k){
         + '</tbody></table></div>' + adThumbStrip(k) + '</div>';
     }
 
-    h += chanSummaryBlock(k);
     h += igBlock(k, 'B');
     h += igBlock(k, 'P');
     h += fbBlock(k);
     h += ytBlock(k);
     h += ytBlock(k, YT2, 'Y2');
-    h += volaBlock(k);
   }
   h += freshBlock();
   document.getElementById('view').innerHTML = h;
@@ -1662,7 +1721,7 @@ function select(k){
 const CATS = [
   {id:'week',    name:'이번 주',      keys:['이번 주 요약','이번 주 광고 소재','이번 주 콘텐츠']},
   {id:'top',     name:'한눈에',        keys:['책별 한 줄','할 일','경로별 유입','출간 후 같은 일수 비교']},
-  {id:'sales',   name:'판매',         keys:['책별 현황','일별 판매','서점별 판매','마케팅 일지']},
+  {id:'sales',   name:'판매',         keys:['판매 한눈에','도서별 현황','책별 현황','일별 판매','서점별 판매','마케팅 일지']},
   {id:'kyobo',   name:'교보문고',     keys:['교보 바로펀딩','교보 바로펀딩 · 종료','교보문고 등수','순위 추이']},
   {id:'ad',      name:'광고',         keys:['광고 집행','광고 나간 곳','광고 소재별 성적']},
   {id:'organic', name:'우리 콘텐츠',  keys:['채널별 유입','유튜브 채널'],
@@ -1676,8 +1735,8 @@ const OPEN_BY_DEFAULT = new Set([
   /* 들어오자마자 보여야 하는 것만 편다. 나머지는 접어 두되 제목 줄에 핵심 숫자를
      남기므로(peek) 펴기 전에도 대강이 읽힌다. 책 탭이 4,700px 에서 절반으로 줄어든다. */
   '책별 한 줄','할 일',
-  '이번 주 요약','책별 현황','일별 판매',
-  '교보문고 등수','교보 바로펀딩',
+  '이번 주 요약','책별 현황','도서별 현황','일별 판매','판매 한눈에','순위 추이',
+  '교보문고 등수','교보 바로펀딩','링크 클릭',
   '광고 집행','채널별 유입','경로별 유입',
   '외부 광고 영상','데이터 현황']);
 
