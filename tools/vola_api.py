@@ -30,12 +30,17 @@ PAUSE = 2.5             # 분당 30회 = 2초에 한 번. 조금 여유 있게 �
 
 
 def fetch(key, page, timeout=30):
+    """키가 있으면 우리가 헤더를 단다.
+
+    없으면 헤더를 안 단 채로 보낸다 — 환경의 「네트워크 시크릿」에 vo.la 가 잡혀 있으면
+    프록시가 나가는 길에 Authorization 을 끼워 넣어 준다. 그 경우 키는 이 컨테이너에
+    아예 안 들어오므로 로그에도 안 남는다. 둘 다 아니면 볼라가 401 로 답하고,
+    아래에서 그 사실을 그대로 보고한다."""
     url = '%s?limit=%d&page=%d&order=date' % (BASE, PER_PAGE, page)
-    req = urllib.request.Request(url, headers={
-        'authorization': 'Bearer ' + key,
-        'content-type': 'application/json',
-        'accept': 'application/json',
-    })
+    headers = {'content-type': 'application/json', 'accept': 'application/json'}
+    if key:
+        headers['authorization'] = 'Bearer ' + key
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode('utf-8'))
 
@@ -43,7 +48,8 @@ def fetch(key, page, timeout=30):
 def main():
     key = os.environ.get('VOLA_API_KEY')
     if not key:
-        sys.exit('VOLA_API_KEY 가 없다. 환경 비밀값에 넣어라 — 코드에 적지 마라.')
+        print('VOLA_API_KEY 가 없다 — 프록시가 헤더를 끼워 넣어 주는지 보고 간다.',
+              file=sys.stderr)
 
     totals, meta, page = {}, {}, 1
     while page <= MAX_PAGES:
@@ -51,8 +57,10 @@ def main():
             body = fetch(key, page)
         except urllib.error.HTTPError as e:
             detail = e.read()[:300].decode('utf-8', 'replace')
-            if e.code == 401:
-                sys.exit('키가 거절됐다(401). 볼라에서 키를 바꿨다면 환경 비밀값도 바꿔라. ' + detail)
+            if e.code in (401, 403):
+                sys.exit('키가 거절됐다(%d). 환경의 네트워크 시크릿에 호스트 `vo.la` 로 '
+                         'Authorization: Bearer <키> 가 잡혀 있는지, 또는 VOLA_API_KEY '
+                         '환경변수가 맞는지 봐라. %s' % (e.code, detail))
             if e.code == 429:
                 sys.exit('호출 한도를 넘었다(429) — 분당 30회다. 잠시 뒤 다시 돌려라.')
             sys.exit('볼라가 HTTP %d 로 거절했다: %s' % (e.code, detail))
