@@ -253,6 +253,22 @@ const RANK_LABEL = {
   totalWeeklyCat:'전국 매장 포함<br>분야 한 주 등수',
   realtime:'지금 이 시각<br>실시간 등수',
 };
+/* 분야 순위 한 칸 — 「교보가 매긴 주간베스트 <분야>」.
+   종합 순위는 자릿수가 커서 책끼리 견주기 어렵다. 분야 안에서 몇 등인지가
+   영업·제안에 바로 쓰이는 숫자라 표 맨 앞에 둔다. 그 값이 없으면
+   「전국 매장 포함 분야 한 주 등수」로 떨어진다. */
+function catRankCell(k){
+  const R = D.ranks[k]; if (!R) return '<span class="muted">—</span>';
+  const wb = R.weeklyBest || {}, tw = (R.ranks || {}).totalWeeklyCat;
+  const cat = esc(wb.catName || R.cat || '분야');
+  if (wb.cat != null)
+    return '<b>'+nf(wb.cat)+'</b>위<span class="t2">'+cat
+         + (wb.stale ? ' · 지난 주' : '') + '</span>';
+  if (tw && tw.rank != null)
+    return '<b>'+nf(tw.rank)+'</b>위<span class="t2">'+cat+' · 매장 포함</span>';
+  return '<span class="muted">—</span><span class="t2">'+cat+'</span>';
+}
+
 /* 교보 일간 순위 한 칸 — 등수와 전날 대비. 500위 밖이면 그렇게 적는다.
    순위는 「지금 어디쯤인가」를 한 글자로 말해 주는 유일한 바깥 잣대라 표 맨 앞에 둔다. */
 function rankCell(k){
@@ -281,15 +297,15 @@ function glanceBlock(k){
   const gap = l.v - l.prev;
   return '<div class="sec">' + sech('판매 한눈에', esc(l.date)+' 까지 들어온 자료 기준')
     + '<div class="kpis">'
-    + kpi('최근 기록일 판매', nf(l.v), '부',
+    + kpi('하루', nf(l.v), '부',
           l.prev ? (gap>=0?'<span class="up">▲ '+nf(gap)+'부</span>'
                           :'<span class="down">▼ '+nf(-gap)+'부</span>')
                    + ' <span class="muted">전날 '+nf(l.prev)+'부</span>'
                  : '<span class="muted">전날 자료 없음</span>')
-    + kpi('누적 판매', nf(a.units), '부', esc(String(b.pub).replace(/-/g,'.'))+' 부터')
-    + kpi('최근 7일 일평균', avg.toFixed(1), '부',
-          pavg ? delta(avg, pavg) + ' <span class="muted">직전 7일 '+pavg.toFixed(1)+'부</span>'
-               : '<span class="muted">직전 7일 자료 없음</span>')
+    + kpi('주간', nf(w.cur), '부',
+          (w.prev ? delta(w.cur, w.prev) + ' ' : '')
+          + '<span class="muted">하루 평균 '+avg.toFixed(1)+'부</span>')
+    + kpi('누적', nf(a.units), '부', esc(String(b.pub).replace(/-/g,'.'))+' 부터')
     + '</div></div>';
 }
 
@@ -1601,11 +1617,14 @@ function select(k){
        순위 · 어제 · 7일 일평균 · 누적을 한 줄에 놓고 나머지(돈)는 뒤로 민다. */
     const lastSale = D.order.map(x => (lastDay(x).date||'')).sort().pop();
     const tbl = '<div class="sec">' + sech('도서별 현황',
-        '교보 일간 순위 · 어제 · 요즘 하루 · 누적'
+        '분야 순위 · 교보 일간 순위 · 하루 · 주간 · 누적'
         + (lastSale ? ' <span class="muted">판매 '+esc(lastSale)+' 기준</span>' : ''))
       + '<div class="panel scroll"><table><thead><tr>'
-      + '<th style="text-align:left">책</th><th>교보 일간<span class="t2">전날 대비</span></th>'
-      + '<th>어제<span class="t2">판 권수</span></th><th>최근 7일<span class="t2">하루 평균</span></th>'
+      + '<th style="text-align:left">책</th>'
+      + '<th>분야 순위<span class="t2">주간베스트</span></th>'
+      + '<th>교보 일간<span class="t2">전날 대비</span></th>'
+      + '<th>하루<span class="t2">어제 판 권수</span></th>'
+      + '<th>주간<span class="t2">최근 7일</span></th>'
       + '<th>누적<span class="t2">판 권수</span></th><th>최근 30일<span class="t2">흐름</span></th>'
       + '<th>이번 달<span class="t2">판매</span></th>'
       + '<th>들어온 돈<span class="t2">누적</span></th><th>광고비<span class="t2">누적</span></th>'
@@ -1620,11 +1639,13 @@ function select(k){
                + (cv ? '<img class="minicov" src="'+cv+'" alt="" loading="lazy">' : '')
                + '<span>'+esc(b.short)
                + '<small>출간 '+esc(b.pub.slice(2).replace(/-/g,'.'))+'</small></span></div></td>'
+               + '<td>'+catRankCell(x)+'</td>'
                + '<td>'+rankCell(x)+'</td>'
                + '<td class="big">'+nf(l.v)
                + (l.prev ? '<span class="t2 '+(gap>=0?'up':'down')+'">'
                            + (gap>=0?'▲':'▼')+nf(Math.abs(gap))+'</span>' : '')+'</td>'
-               + '<td class="big">'+avg.toFixed(1)+'</td>'
+               + '<td class="big">'+nf(s7.cur)
+               + '<span class="t2 muted">하루 '+avg.toFixed(1)+'</span></td>'
                + '<td class="big">'+nf(a.units)+'</td>'
                + '<td>'+spark(sp, BC[x], 110, 26)+'</td>'
                + '<td>'+nf(mm.units)+'</td>'
