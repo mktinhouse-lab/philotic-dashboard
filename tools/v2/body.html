@@ -1203,7 +1203,9 @@ function volaBlock(k){
   /* 전체 탭에서는 같은 이름의 경로가 책마다 따로 있다('밈케터'가 둘). 책을 붙여 구별한다. */
   const bookOf = sl => { const bk = (VL.book||{})[sl]; return bk && D.books[bk] ? D.books[bk].short : ''; };
   const rowsAll = mine.map(l => {
-    const day = (VL.daily||{})[l[0]] || {};
+    /* slugDaily 는 9/16 까지의 손수집 일별과 그 뒤의 누적 차이를 이어 붙인다.
+       예전에는 VL.daily 만 봐서 이 그래프가 9/15 에서 멈춰 있었다. */
+    const day = slugDaily(l[0]);
     const tag = k==='all' && bookOf(l[0]) ? l[1]+' · '+bookOf(l[0]) : l[1];
     return {slug:l[0], name:tag, ad:isAd(l[2]), day,
             win:sum(Object.values(day)),
