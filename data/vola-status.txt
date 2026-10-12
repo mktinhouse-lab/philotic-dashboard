@@ -1,0 +1,12 @@
+볼라(vo.la) 수집 재시도 — 2026-10-12  → 여전히 실패
+
+    python3 tools/vola_api.py  →  exit=1
+
+stderr (그대로):
+VOLA_API_KEY 가 없다 — 프록시가 헤더를 끼워 넣어 주는지 보고 간다.
+키가 거절됐다(403). 환경의 네트워크 시크릿에 호스트 `vo.la` 로 Authorization: Bearer <키> 가 잡혀 있는지, 또는 VOLA_API_KEY 환경변수가 맞는지 봐라. {"error":1,"message":"A valid API key is required to use this service."}
+
+10/08 과 같은 403 이다. 환경 설정은 이 부분이 바뀌지 않았다.
+키는 추측하지도, 어디서 찾아 넣지도 않았다. export 하지 않았다.
+원인 진단은 data/vola-diag.txt (10/08) 에 그대로 유효하다.
+data/vola_totals.json 은 쓰지 않았다 (stdout 이 비어 있었다).
