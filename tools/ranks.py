@@ -18,17 +18,28 @@ API_KEY = ('eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..SAuG7hzFxwWfewcz.gMw0bGwwgB
            'ZzIdfRNQbqMbvLUmv5-9sRubZjE-iJ-wNPlNbpFnHprd3aMGDrJGqCkUNz3AkvR24a6S18-9PUCOySLlK296YlQwyHKRLDprH1Atq8'
            '.Vy8qyA72gFcghwWdO0q-_A')
 BASE = 'https://store.kyobobook.co.kr/api/gw/best/best-seller/'
-SCAN_DEPTH, PER = 500, 50
+# 전체(A) 목록은 200위에서 끝난다 — 201위부터 빈 배열이다(2026-10-12 확인). 500 은 빈 쪽을
+# 여섯 번 더 부르는 것일 뿐이다. PER 은 50 을 넘기지 마라 — 100·200 으로 올리면 page=1 응답이
+# 중간에 끊겨 IncompleteRead 로 죽는다(같은 바이트에서 재현됨).
+SCAN_DEPTH, PER = 200, 50
 
+# 분야 코드(`bsslBksClstCode`)는 **대소문자를 구분한다** — I(인문)≠i(일본도서),
+# g(청소년)≠G(아동). 베스트셀러 화면 `/bestseller/total/weekly` 본문의 `filterData.list` 에
+# `codeWrth`/`codeWrthName` 으로 박혀 있다. 옮길 때 대소문자를 반드시 확인해라.
+#   C 에세이 · F 시 · I 인문 · c 자기계발 · B 소설 · K 경제경영 · b 역사/문화 · g 청소년
+# 분야별 목록은 20위까지만 온다(per·page 를 올려도 같다). 20위 밖은 상품페이지 배지로 본다.
 BOOKS = {
     'kaljung': {'title': '칼 융의 내면수업',   'match': '칼 융의 내면수업',   'cat': '인문',     'catCode': 'I', 'path': '인문 > 심리학 > 심리학자 > 융',    'pid': 'S000220665243'},
     'wonsiin': {'title': '완벽한 원시인',      'match': '완벽한 원시인',      'cat': '인문',     'catCode': 'I', 'path': '인문 > 인문학일반 > 인문교양',     'pid': 'S000219310977'},
     'freud':   {'title': '프로이트의 감정수업', 'match': '프로이트의 감정수업', 'cat': '인문',     'catCode': 'I', 'path': '인문 > 심리학 > 교양심리',        'pid': 'S000218149524'},
     'muhan':   {'title': '무한의 부',          'match': '무한의 부',          'cat': '자기계발', 'catCode': 'c', 'path': '자기계발 > 성공/처세 > 성공스토리', 'pid': 'S000214211407'},
-    # 2026-09-23 정식출간. 분야가 시/에세이라 catCode 가 다르다 — 여기 빠져 있어서
-    # 10/1 수집 때 우서전지 순위가 통째로 사라졌다. books 를 통째로 다시 쓰기 때문이다.
+    # 2026-09-23 정식출간. 여기 빠져 있어서 10/1 수집 때 순위가 통째로 사라졌다
+    # (books 를 통째로 다시 쓰기 때문이다).
+    # catCode 를 'g' 로 잡아 뒀던 것은 **틀렸다**(2026-10-12 확인). 'g' 는 시/에세이가 아니라
+    # **청소년**이다 — 청소년 베스트 20위를 뒤지고 있었으니 영원히 안 잡혔다. 베스트셀러 화면의
+    # 분야 칩에는 「시/에세이」가 아예 없고 「에세이」(C)와 「시」(F)가 따로다. C 로 바꾸니 6위.
     'pyoryu':  {'title': '우리는 서로의 전부이자 지옥이었다', 'match': '우리는 서로의 전부이자 지옥이었다',
-                'cat': '시/에세이', 'catCode': 'g', 'path': '시/에세이 > 나라별 에세이 > 한국에세이', 'pid': 'S000221144459'},
+                'cat': '에세이', 'catCode': 'C', 'path': '시/에세이 > 나라별 에세이 > 한국에세이', 'pid': 'S000221144459'},
 }
 
 SURFACES = [
